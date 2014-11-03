@@ -12,9 +12,11 @@
 
 create_group(LServer,UserJid,GroupName) ->
     F = fun() ->
-                ejabberd_odbc:sql_query_t([<<"insert into groupinfo(name,owner) values('">>, GroupName, "','", UserJid, "');"]),
+                ejabberd_odbc:sql_query_t([<<"insert into groupinfo(name,owner) values('">>,
+                  ejabberd_odbc:escape(GroupName), "','", ejabberd_odbc:escape(UserJid), "');"]),
                 Result = ejabberd_odbc:sql_query_t([<<"select last_insert_id();">>]),
-                ejabberd_odbc:sql_query_t([<<"insert into groupuser(groupid,jid) values(last_insert_id(),'">>, UserJid, "');"]),
+                ejabberd_odbc:sql_query_t([<<"insert into groupuser(groupid,jid) values(last_insert_id(),'">>,
+                  ejabberd_odbc:escape(UserJid), "');"]),
                 Result
         end,
     ejabberd_odbc:sql_transaction(LServer, F).
@@ -26,12 +28,12 @@ add_members(LServer,GroupId,Members) ->
 get_groupname_by_groupid(LServer,GroupId) ->
     ejabberd_odbc:sql_query(
       LServer,
-      ["select name from groupinfo where groupid = '", GroupId, "';"]).
+      ["select name from groupinfo where groupid = '", ejabberd_odbc:escape(GroupId), "';"]).
 
 create_and_add(LServer,GroupName,MembersList,UserJid) ->
     F = fun() ->
                 ejabberd_odbc:sql_query_t([<<"insert into groupinfo(name,owner) values('">>,
-                                           GroupName, "','", UserJid, "');"]),
+                  ejabberd_odbc:escape(GroupName), "','", ejabberd_odbc:escape(UserJid), "');"]),
                 Result = ejabberd_odbc:sql_query_t([<<"select last_insert_id();">>]),
                 {selected, _, [{RId}]} = Result,
                 QueryList = make_add_query([binary_to_list(UserJid)] ++ MembersList, "", RId),
@@ -45,7 +47,7 @@ create_and_add(LServer,GroupName,MembersList,UserJid) ->
 make_add_query([H | T], Result, GroupID) ->
     Query =
         [<<"insert into groupuser(groupid, jid) "
-           "values ('">>, GroupID, "', '", list_to_binary(H), "');"],
+           "values ('">>, ejabberd_odbc:escape(GroupID), "', '", ejabberd_odbc:escape(list_to_binary(H)), "');"],
     make_add_query(T, [Query | Result], GroupID);
 make_add_query([], Result, _GroupID) ->
     Result.
@@ -54,10 +56,10 @@ get_members_by_groupid(LServer,GroupId) ->
     ejabberd_odbc:sql_query(
       LServer,
       [<<"select jid from groupuser"
-         " where groupid = '">>, GroupId, "';"]).
+         " where groupid = '">>, ejabberd_odbc:escape(GroupId), "';"]).
 
 get_groups_by_jid(LServer,UserJid) ->
     ejabberd_odbc:sql_query(
       LServer,
-      [<<"select groupinfo.groupid,groupinfo.name from groupinfo,groupuser"
-         " where groupuser.jid = '">>, UserJid, "' and groupinfo.groupid = groupuser.groupid;"]).
+      [<<"select groupinfo.groupid,groupinfo.name,groupinfo.owner from groupinfo,groupuser"
+         " where groupuser.jid = '">>, ejabberd_odbc:escape(UserJid), "' and groupinfo.groupid = groupuser.groupid;"]).

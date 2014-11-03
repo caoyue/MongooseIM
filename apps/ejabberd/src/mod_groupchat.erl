@@ -93,11 +93,13 @@ add_members(From, _To, #iq{sub_el = SubEl} = IQ) ->
                                         {atomic, _} ->
                                             {selected, [<<"name">>], [{GroupName}]} =
                                                 odbc_groupchat:get_groupname_by_groupid(LServer, GroupId),
-                                            MembersJid = get_user_from_jid(NewMembers ++ ExistsMembers, []),
-                                            push_event_message(GroupId, GroupName, LServer, MembersJid, MembersJid),
+                                            ExistsMembersJid = get_user_from_jid(ExistsMembers, []),
+                                            NewMembersJid = get_user_from_jid(NewMembers,[]),
+                                            push_event_message(GroupId, GroupName, LServer, ExistsMembersJid ++ NewMembersJid, NewMembersJid),
                                             IQ#iq{type = result,
                                                   sub_el = [SubEl#xmlel{attrs =
-                                                                            [{<<"xmlns">>, <<"jabber:iq:aft_groupchat">>}, {<<"groupid">>, GroupId},
+                                                                            [{<<"xmlns">>, <<"jabber:iq:aft_groupchat">>},
+                                                                             {<<"groupid">>, GroupId},
                                                                              {<<"query_type">>, <<"aft_add_member">>}]}]};
                                         _ ->
                                             IQ#iq{type = error, sub_el = []}
@@ -191,18 +193,17 @@ get_groups(From, _To, #iq{sub_el = SubEl} = IQ) ->
     #jid{luser = LUser, lserver = LServer} = From,
     UserJid = list_to_binary(binary_to_list(LUser) ++ "@" ++ binary_to_list(LServer)),
     case odbc_groupchat:get_groups_by_jid(LServer, UserJid) of
-        {selected, [<<"groupid">>, <<"name">>], Rs} when is_list(Rs) ->
-            IQ#iq{type = result, sub_el = [SubEl#xmlel{children = [grouplist_to_json(Rs, "")]}]};
+        {selected, [<<"groupid">>, <<"name">>,<<"owner">>], Rs} when is_list(Rs) ->
+            IQ#iq{type = result, sub_el = [SubEl#xmlel{children = [{xmlcdata,list_to_binary(grouplist_to_json(Rs))}]}]};
         _ ->
             IQ#iq{type = error, sub_el = []}
     end.
 
-grouplist_to_json([H | T], Result) ->
-    {GroupId, GroupName} = H,
-    grouplist_to_json(T, Result ++ "{\"jid\":\"" ++ binary_to_list(GroupId)
-                      ++ "\",\"nickname\":\"" ++ binary_to_list(GroupName) ++ "\"},");
-grouplist_to_json([], Result) ->
-    {xmlcdata, list_to_binary("[" ++ string:sub_string(Result, 1, string:len(Result) - 1) ++ "]")}.
+grouplist_to_json(List) ->
+    JsonArray = [ {struct,[{<<"jid">>, GroupId},
+                           {<<"nickname">>,GroupName},
+                           {<<"master">>,Owner}]} || {GroupId,GroupName,Owner} <- List],
+    mochijson2:encode(JsonArray).
 
 push_event_message(GroupId, Nickname, Server, ToList, MemberList) ->
     FromString = <<<<"aftgroup_">>/binary, GroupId/binary, $@, Server/binary>>,
@@ -210,7 +211,7 @@ push_event_message(GroupId, Nickname, Server, ToList, MemberList) ->
     From = {<<"from">>, FromString},
     Type = {<<"type">>, <<"aft_groupchat">>},
     Push = {<<"push">>, <<"true">>},
-    Contents = event_member_json(MemberList, "add"),
+    Contents = event_member_json(MemberList, <<"add">>),
     Packet = {xmlel, <<"message">>, [],
               [{xmlcdata, <<"\n     ">>},
                {xmlel, <<"body">>, [{<<"groupid">>, GroupId}, {<<"nickname">>, Nickname}],
@@ -224,17 +225,9 @@ push_event_message(GroupId, Nickname, Server, ToList, MemberList) ->
                                                 Packet#xmlel{attrs = [From, ToAttr, Type, Lang, Push]}) end,
                   ToList).
 
-event_member_json(MemberList, Action) ->
-    Contents = lists:foldl(fun({U, S}, Acc) ->
-                                   Acc1 = if Acc /= "" ->
-                                                  Acc ++ ",";
-                                             true -> Acc
-                                          end,
-                                   Acc1 ++ "{\"jid\":\"" ++ binary_to_list(U) ++ "@" ++ binary_to_list(S)
-                                       ++ "\", \"action\":\"" ++ Action ++ "\"}"
-                           end,
-                           "", MemberList),
-    "[" ++ Contents ++ "]".
+event_member_json(MemberList,Action) ->
+    JsonArray = [ {struct,[{<<"jid">>, <<U/binary,$@,S/binary>>},{<<"action">>,Action}]} || {U,S} <- MemberList],
+    mochijson2:encode(JsonArray).
 
 get_user_from_jid([H | R], Result) ->
     #jid{luser = U, lserver = S} = jlib:binary_to_jid(list_to_binary(H)),

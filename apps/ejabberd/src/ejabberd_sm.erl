@@ -96,14 +96,14 @@
 %% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
 %% Description: Starts the server
 %%--------------------------------------------------------------------
--spec start_link() -> 'ignore' | {'error',_} | {'ok',pid()}.
+-spec start_link() -> 'ignore' | {'error', _} | {'ok', pid()}.
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 
 -spec route(From :: ejabberd:jid(),
             To :: ejabberd:jid(),
-            Packet :: jlib:xmlel()) -> 'ok' | {'error','lager_not_running'}.
+            Packet :: jlib:xmlel()) -> 'ok' | {'error', 'lager_not_running'}.
 route(From, To, Packet) ->
     case catch do_route(From, To, Packet) of
         {'EXIT', Reason} ->
@@ -155,7 +155,7 @@ close_session(SID, User, Server, Resource) ->
                             Server :: ejabberd:server(),
                             _JID :: ejabberd:jid(),
                             _Type :: any(),
-                            _Reason :: any()) -> any() | {stop,false}.
+                            _Reason :: any()) -> any() | {stop, false}.
 check_in_subscription(Acc, User, Server, _JID, _Type, _Reason) ->
     case ejabberd_auth:is_user_exists(User, Server) of
         true ->
@@ -179,7 +179,7 @@ bounce_offline_message(#jid{server = Server} = From, To, Packet) ->
 
 -spec disconnect_removed_user(User :: ejabberd:user(),
                               Server :: ejabberd:server()
-                                        ) -> 'ok' | {'error','lager_not_running'}.
+                                        ) -> 'ok' | {'error', 'lager_not_running'}.
 disconnect_removed_user(User, Server) ->
     ejabberd_sm:route(jlib:make_jid(<<>>, <<>>, <<>>),
                       jlib:make_jid(User, Server, <<>>),
@@ -386,7 +386,7 @@ handle_cast(_Msg, State) ->
 %%                                       {stop, Reason, State}
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
--spec handle_info(_,_) -> {'noreply',_}.
+-spec handle_info(_, _) -> {'noreply', _}.
 handle_info({route, From, To, Packet}, State) ->
     case catch do_route(From, To, Packet) of
         {'EXIT', Reason} ->
@@ -424,7 +424,7 @@ handle_info(_Info, State) ->
 %% cleaning up. When it returns, the gen_server terminates with Reason.
 %% The return value is ignored.
 %%--------------------------------------------------------------------
--spec terminate(_,state()) -> 'ok'.
+-spec terminate(_, state()) -> 'ok'.
 terminate(_Reason, _State) ->
     ejabberd_commands:unregister_commands(commands()),
     ok.
@@ -467,7 +467,7 @@ set_session(SID, User, Server, Resource, Priority, Info) ->
 do_route(From, To, Packet) ->
     ?DEBUG("session manager~n\tfrom ~p~n\tto ~p~n\tpacket ~P~n",
            [From, To, Packet, 8]),
-    #jid{ luser = LUser, lserver = LServer, lresource = LResource} = To,
+    #jid{luser = LUser, lserver = LServer, lresource = LResource} = To,
     #xmlel{name = Name, attrs = Attrs} = Packet,
     case LResource of
         <<>> ->
@@ -493,7 +493,7 @@ do_route(From, To, Packet) ->
         Packet :: jlib:xmlel(),
         Type :: 'subscribe' | 'subscribed' | 'unsubscribe' | 'unsubscribed',
         Reason :: any()) -> boolean().
-do_route_no_resource_presence_prv(From,To,Packet,Type,Reason) ->
+do_route_no_resource_presence_prv(From, To, Packet, Type, Reason) ->
     is_privacy_allow(From, To, Packet) andalso ejabberd_hooks:run_fold(
                                                  roster_in_subscription,
                                                  To#jid.lserver,
@@ -523,8 +523,8 @@ do_route_no_resource_presence(_, _, _, _) ->
                            From :: ejabberd:jid(),
                            To :: ejabberd:jid(),
                            Packet :: jlib:xmlel())
-                          -> 'ok' | 'stop' | 'todo' | pid() | {'error','lager_not_running'}
-                                 | {'process_iq',_,_,_}.
+                          -> 'ok' | 'stop' | 'todo' | pid() | {'error', 'lager_not_running'}
+                                 | {'process_iq', _, _, _}.
 do_route_no_resource(<<"presence">>, Type, From, To, Packet) ->
     case do_route_no_resource_presence(Type, From, To, Packet) of
         true ->
@@ -553,7 +553,7 @@ do_route_no_resource(_, _, _, _, _) ->
                        To :: ejabberd:jid(),
                        Packet :: jlib:xmlel())
                       -> ok | stop. % ?DEBUG may return {error, lager_not_started}
-do_route_offline(<<"message">>, _, From, To, Packet)  ->
+do_route_offline(<<"message">>, _, From, To, Packet) ->
     route_message(From, To, Packet);
 do_route_offline(<<"iq">>, <<"error">>, _From, _To, _Packet) ->
     ok;
@@ -618,37 +618,36 @@ route_message(From, To, Packet) ->
     LServer = To#jid.lserver,
 
     %% add group chat. sharp add. 2014-9-23. _begin.
-    case string:left( binary_to_list( LUser ), 9 ) of
+    case string:left(binary_to_list(LUser), 9) of
         "aftgroup_" ->
-            GroupID = string:sub_string( binary_to_list( LUser ), 10 ),
-            case mod_groupchat:get_members_api(LServer,list_to_binary( GroupID ) ) of
+            GroupId = list_to_binary(string:sub_string(binary_to_list(LUser), 10)),
+            case mod_groupchat:get_members_api(LServer, GroupId) of
                 {error, _} -> Err = jlib:make_error_reply(Packet,
                                                           ?ERR_SERVICE_UNAVAILABLE),
                               ejabberd_router:route(To, From, Err);
                 {ok, Members} ->
                     #jid{user = User, server = Server} = From,
-                    SelfUS = { User, Server },
-                    OtherMembers = lists:delete( SelfUS, Members ),
-                    En = lists:keyfind( <<"xml:lang">>, 1, Packet#xmlel.attrs),
-                    lists:foreach( fun( {BinU, BinS} ) ->
-                                           U = binary_to_list( BinU ),
-                                           S = binary_to_list( BinS ),
-                                           FU =  "aftgroup_" ++ GroupID,
-                                           Attrs = [{<<"from">>, list_to_binary( FU ++ "@" ++ binary_to_list(To#jid.server) ) },
-                                                    {<<"to">>, list_to_binary( U ++ "@" ++ S )},
-                                                    {<<"type">>, <<"chat">>},
-                                                    En,
-                                                    {<<"user">>, jlib:jid_to_binary( From ) }],
-                                           ejabberd_router:route( jlib:make_jid( list_to_binary( FU ), To#jid.server, <<"">> ),
-                                                                  jlib:make_jid( BinU , BinS, <<"">> ) ,
-                                                                  Packet#xmlel{attrs = Attrs} )
-                                   end,
-                                   OtherMembers )
+                    SelfUS = {User, Server},
+                    #jid{user = _, server = TServer} = To,
+                    OtherMembers = lists:delete(SelfUS, Members),
+                    En = lists:keyfind(<<"xml:lang">>, 1, Packet#xmlel.attrs),
+                    lists:foreach(fun({BinU, BinS}) ->
+                                          FU = <<<<"aftgroup_">>/binary, GroupId/binary>>,
+                                          Attrs = [{<<"from">>, <<FU/binary, $@, TServer/binary>>},
+                                                   {<<"to">>, <<BinU/binary, $@, BinS/binary>>},
+                                                   {<<"type">>, <<"chat">>},
+                                                   En,
+                                                   {<<"user">>, jlib:jid_to_binary(From)}],
+                                          ejabberd_router:route(jlib:make_jid(FU, TServer, <<"">>),
+                                                                jlib:make_jid(BinU, BinS, <<"">>),
+                                                                Packet#xmlel{attrs = Attrs})
+                                  end,
+                                  OtherMembers)
             end;
         _ ->
             %% _end.
 
-            PrioPid = get_user_present_pids(LUser,LServer),
+            PrioPid = get_user_present_pids(LUser, LServer),
             case catch lists:max(PrioPid) of
                 {Priority, _} when is_integer(Priority), Priority >= 0 ->
                     lists:foreach(
@@ -698,7 +697,7 @@ clean_session_list(Ss) ->
     clean_session_list(lists:keysort(#session.usr, Ss), []).
 
 
--spec clean_session_list([sid()],[sid()]) -> [sid()].
+-spec clean_session_list([sid()], [sid()]) -> [sid()].
 clean_session_list([], Res) ->
     Res;
 clean_session_list([S], Res) ->
@@ -720,7 +719,7 @@ clean_session_list([S1, S2 | Rest], Res) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 get_user_present_pids(LUser, LServer) ->
     Ss = clean_session_list(?SM_BACKEND:get_sessions(LUser, LServer)),
-    PrioRes = [{S#session.priority, element(2,S#session.sid)} ||
+    PrioRes = [{S#session.priority, element(2, S#session.sid)} ||
                   S <- Ss, is_integer(S#session.priority)].
 
 -spec get_user_present_resources(LUser :: ejabberd:user(),
@@ -802,8 +801,8 @@ get_max_user_sessions(LUser, Host) ->
 -spec process_iq(From :: ejabberd:jid(),
                  To :: ejabberd:jid(),
                  Packet :: jlib:xmlel()) -> 'ok' | 'todo' | pid()
-                                                | {'error','lager_not_running'}
-                                                | {'process_iq',_,_,_}.
+                                                | {'error', 'lager_not_running'}
+                                                | {'process_iq', _, _, _}.
 process_iq(From, To, Packet) ->
     IQ = jlib:iq_query_info(Packet),
     case IQ of
@@ -846,7 +845,7 @@ force_update_presence({LUser, LServer}) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% ejabberd commands
 
--spec commands() -> [ejabberd_commands:cmd(),...].
+-spec commands() -> [ejabberd_commands:cmd(), ...].
 commands() ->
     [
      %% TODO: Implement following API functions with pluggable backends architcture
@@ -887,5 +886,5 @@ sm_backend(Backend) ->
 -spec backend() -> atom().
 backend() ->
     ejabberd_sm_",
-       atom_to_list(Backend),
+      atom_to_list(Backend),
     ".\n"]).
