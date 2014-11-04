@@ -618,31 +618,36 @@ route_message(From, To, Packet) ->
     LServer = To#jid.lserver,
 
     %% add group chat. sharp add. 2014-9-23. _begin.
+    %% <message from="13412345678@localhost" xml:lang="en" to="aftgroup_1@localhost">
+    %%   <body>adfadfadf</body>
+    %% </message>
     case string:left(binary_to_list(LUser), 9) of
         "aftgroup_" ->
             GroupId = list_to_binary(string:sub_string(binary_to_list(LUser), 10)),
-            case mod_groupchat:get_members_api(LServer, GroupId) of
-                {error, _} -> Err = jlib:make_error_reply(Packet,
-                                                          ?ERR_SERVICE_UNAVAILABLE),
-                              ejabberd_router:route(To, From, Err);
-                {ok, Members} ->
+            case odbc_groupchat:get_members_by_groupid(LServer, GroupId) of
+                {ok, Result} ->
+                    R = [jlib:binary_to_jid(X) || {X} <- Result],
+                    Members = [{U, S} || {jid, U, S, _, _, _, _} <- R],
                     #jid{user = User, server = Server} = From,
-                    SelfUS = {User, Server},
-                    #jid{user = _, server = TServer} = To,
-                    OtherMembers = lists:delete(SelfUS, Members),
-                    En = lists:keyfind(<<"xml:lang">>, 1, Packet#xmlel.attrs),
+                    Sender = {User, Server},
+                    #jid{user = _, server = ToServer} = To,
+                    OtherMembers = lists:delete(Sender, Members),
+                    Lang = lists:keyfind(<<"xml:lang">>, 1, Packet#xmlel.attrs),
                     lists:foreach(fun({BinU, BinS}) ->
                                           FU = <<<<"aftgroup_">>/binary, GroupId/binary>>,
-                                          Attrs = [{<<"from">>, <<FU/binary, $@, TServer/binary>>},
+                                          Attrs = [{<<"from">>, <<FU/binary, $@, ToServer/binary>>},
                                                    {<<"to">>, <<BinU/binary, $@, BinS/binary>>},
                                                    {<<"type">>, <<"chat">>},
-                                                   En,
+                                                   Lang,
                                                    {<<"user">>, jlib:jid_to_binary(From)}],
-                                          ejabberd_router:route(jlib:make_jid(FU, TServer, <<"">>),
-                                                                jlib:make_jid(BinU, BinS, <<"">>),
+                                          ejabberd_router:route(jlib:make_jid(FU, ToServer, <<>>),
+                                                                jlib:make_jid(BinU, BinS, <<>>),
                                                                 Packet#xmlel{attrs = Attrs})
                                   end,
-                                  OtherMembers)
+                                  OtherMembers);
+                {error, _} ->
+                    Err = jlib:make_error_reply(Packet, ?ERR_SERVICE_UNAVAILABLE),
+                    ejabberd_router:route(To, From, Err)
             end;
         _ ->
             %% _end.

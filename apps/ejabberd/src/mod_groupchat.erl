@@ -2,210 +2,325 @@
 
 -behaviour(gen_mod).
 
--export([start/2, stop/1, process_iq/3, get_members_api/2]).
+-export([start/2, stop/1, process_iq/3]).
 
 -include("ejabberd.hrl").
 -include("jlib.hrl").
 
+-define(NS_GROUPCHAT, <<"aft:iq:groupchat">>).
+
 start(Host, _Opts) ->
     gen_iq_handler:add_iq_handler(ejabberd_sm, Host,
-                                  <<"jabber:iq:aft_groupchat">>, ?MODULE, process_iq, no_queue).
+                                  ?NS_GROUPCHAT, ?MODULE, process_iq, no_queue).
 
 stop(Host) ->
-    gen_iq_handler:remove_iq_handler(ejabberd_sm, Host, <<"jabber:iq:aft_groupchat">>).
-
-is_query_groupchat(Packet) ->
-    case Packet of
-        #xmlel{name = <<"query">>} -> true;
-        _ -> false
-    end.
-
-aft_query_type(SubEl) ->
-    case xml:get_tag_attr_s(<<"query_type">>, SubEl) of
-        <<"aft_get_members">> -> aft_get_members;
-        <<"aft_get_groups">> -> aft_get_groups;
-        <<"aft_group_member">> -> aft_group_member;
-        <<"aft_create_group">> -> aft_create_group;
-        <<"aft_add_member">> -> aft_add_member;
-        _ -> undefined
-    end.
+    gen_iq_handler:remove_iq_handler(ejabberd_sm, Host, ?NS_GROUPCHAT).
 
 %% @doc create group
-%% <iq from="cc4bc427-eeaa-41eb-84a7-f713c0205a9f@192.168.1.167/caoyue-PC" type="set" id="aad5a">
-%%     <query xmlns="jabber:iq:aft_groupchat" query_type="aft_create_group">FirstGroup</query>
+%% <iq from="13412345678@localhost/caoyue-PC" type="set" id="aad5a">
+%% <query xmlns="aft:iq:groupchat" query_type="aft_create_group" groupname="FirstGroup"></query>
 %% </iq>
 %%
-%% <iq from="cc4bc427-eeaa-41eb-84a7-f713c0205a9f@192.168.1.167" type="result"
-%%      to="cc4bc427-eeaa-41eb-84a7-f713c0205a9f@192.168.1.167/resource" id="aad5a">
-%%  <query xmlns="jabber:iq:aft_groupchat" query_type="aft_create_group" groupid="1">FirstGroup</query>
+%% <iq from="13412345678@localhost" type="result" to="13412345678@localhost/caoyue-PC" id="aad5a">
+%% <query xmlns="aft:iq:groupchat">
+%% {"groupid":"5","groupname":"FirstGroup","master":"13412345678@localhost"}</query>
 %% </iq>
 create_group(From, _To, #iq{sub_el = SubEl} = IQ) ->
     #jid{luser = LUser, lserver = LServer} = From,
     UserJid = <<LUser/binary, $@, LServer/binary>>,
-    GroupName = xml:get_tag_cdata(SubEl),
+    GroupName = xml:get_tag_attr_s(<<"groupname">>, SubEl),
     case odbc_groupchat:create_group(LServer, UserJid, GroupName) of
-        {atomic, {selected, _, [{ResultId}]}} ->
-            Res = SubEl#xmlel{attrs = [{<<"xmlns">>, <<"jabber:iq:aft_groupchat">>}, {<<"groupid">>, ResultId}]},
+        {ok, GroupId} ->
+            Res = SubEl#xmlel{attrs = [{<<"xmlns">>, ?NS_GROUPCHAT}], children =
+                                  [{xmlcdata, list_to_binary(group_to_json(GroupName, GroupId, UserJid))}]},
             IQ#iq{type = result, sub_el = [Res]};
+        {error, _} ->
+            IQ#iq{type = error, sub_el = []}
+    end.
+
+group_to_json(GroupName, GroupId, Owner) ->
+    mochijson2:encode({struct, [{<<"groupid">>, GroupId}, {<<"groupname">>, GroupName}, {<<"master">>, Owner}]}).
+
+%% @doc add members
+%% <iq from="13412345678@localhost/caoyue-PC" id="aad5a" type="set">
+%% <query xmlns="aft:iq:groupchat" groupid="3" query_type="aft_add_member">
+%%    ["13411111111@localhost","13422222222@localhost"]</query>
+%% </iq>
+%%
+%% <iq from="13412345678@localhost" type="result" to="13412345678@localhost/caoyue-PC" id="aad5a">
+%% <query xmlns="aft:iq:groupchat" query_type="aft_add_member" groupid="1">
+%%   [{"userjid":"13411111111@localhost","nickname":"张三"},{"userjid":"13422222222@localhost","nickname":"李四"}]
+%% </query>
+%% </iq>
+add_members(From, _To, #iq{sub_el = SubEl} = IQ) ->
+    #jid{luser = LUser, lserver = LServer} = From,
+    UserJid = <<LUser/binary, $@, LServer/binary>>,
+    GroupId = xml:get_tag_attr_s(<<"groupid">>, SubEl),
+    case odbc_groupchat:is_user_in_group(LServer, UserJid, GroupId) of
+        {ok, true} ->
+            MembersList = mochijson2:decode(xml:get_tag_cdata(SubEl)),
+            case MembersList of
+                [] -> IQ#iq{type = error, sub_el = []};
+                _ ->
+                    case odbc_groupchat:get_members_by_groupid(LServer, GroupId) of
+                        {ok, Rs} when is_list(Rs) ->
+                            case Rs of
+                                [] ->
+                                    IQ#iq{type = error, sub_el = []};
+                                _ ->
+                                    ExistsMembers = [Jid || {Jid, _} <- Rs],
+                                    NewMembers = lists:filter(fun(X) ->
+                                                                      not lists:member(X, ExistsMembers)
+                                                              end, MembersList),
+                                    case NewMembers of
+                                        [] ->
+                                            IQ#iq{type = result, sub_el =
+                                                      [SubEl#xmlel{
+                                                         attrs = [{<<"xmlns">>, ?NS_GROUPCHAT}, {<<"groupid">>, GroupId},
+                                                                  {<<"query_type">>, <<"aft_add_member">>}],
+                                                         children = []}]};
+                                        _ ->
+                                            case odbc_groupchat:add_members(LServer, GroupId, NewMembers) of
+                                                {ok, MembersResult} ->
+                                                    case odbc_groupchat:get_groupname_by_groupid(LServer, GroupId) of
+                                                        {ok, GroupName} ->
+                                                            ExistsMembersJid = get_user_from_jid(ExistsMembers, []),
+                                                            NewMembersJid = get_user_from_jid(NewMembers, []),
+                                                            push_event_message(GroupId, GroupName, LServer,
+                                                                               ExistsMembersJid ++ NewMembersJid, NewMembersJid),
+                                                            IQ#iq{type = result,
+                                                                  sub_el = [SubEl#xmlel{attrs =
+                                                                                            [{<<"xmlns">>, ?NS_GROUPCHAT},
+                                                                                             {<<"groupid">>, GroupId},
+                                                                                             {<<"query_type">>, <<"aft_add_member">>}],
+                                                                                        children = [{xmlcdata, list_to_binary(
+                                                                                                                 members_to_json(MembersResult))}]}]};
+                                                        {error, _} ->
+                                                            IQ#iq{type = error, sub_el = []}
+                                                    end;
+                                                {error, _} ->
+                                                    IQ#iq{type = error, sub_el = []}
+                                            end
+                                    end
+                            end;
+                        {error, _} ->
+                            IQ#iq{type = error, sub_el = []}
+                    end
+            end;
         _ ->
             IQ#iq{type = error, sub_el = []}
     end.
 
-%% @doc add members
-%% <iq from="cc4bc427-eeaa-41eb-84a7-f713c0205a9f@192.168.1.167/resource" id="2115763" type="set">
-%% <query xmlns="jabber:iq:aft_groupchat" groupid="1" query_type="aft_add_member">
-%%     ["08aa4f13-b3a3-49d2-820c-849d1a9c1bb7@192.168.1.167","cc4bc427-eeaa-41eb-84a7-f713c0205a9f@192.168.1.167"]
-%% </query>
-%% </iq>
-%%
-%% <iq from="cc4bc427-eeaa-41eb-84a7-f713c0205a9f@192.168.1.167" type="result"
-%%       to="cc4bc427-eeaa-41eb-84a7-f713c0205a9f@192.168.1.167/resource" id="2115763">
-%%    <query xmlns="jabber:iq:aft_groupchat" query_type="aft_add_member" groupid="1">
-%%      ["08aa4f13-b3a3-49d2-820c-849d1a9c1bb7@192.168.1.167","cc4bc427-eeaa-41eb-84a7-f713c0205a9f@192.168.1.167"]
-%%    </query>
-%% </iq>
-add_members(From, _To, #iq{sub_el = SubEl} = IQ) ->
-    #jid{luser = _, lserver = LServer} = From,
-    GroupId = xml:get_tag_attr_s(<<"groupid">>, SubEl),
-    Members = binary_to_list(xml:get_tag_cdata(SubEl)),
-    MembersList = string:tokens(Members, "\n ,\"[]"),
-    case MembersList of
-        [] -> IQ#iq{type = error, sub_el = []};
-        _ ->
-            case odbc_groupchat:get_members_by_groupid(LServer, GroupId) of
-                {selected, [<<"jid">>], Rs} when is_list(Rs) ->
-                    case Rs of
-                        [] ->
-                            IQ#iq{type = error, sub_el = []};
-                        _ ->
-                            ExistsMembers = [binary_to_list(X) || {X} <- Rs],
-                            NewMembers = lists:filter(fun(X) ->
-                                                              not lists:member(X, ExistsMembers)
-                                                      end, MembersList),
-                            case NewMembers of
-                                [] ->
-                                    IQ#iq{type = result, sub_el =
-                                              [SubEl#xmlel{
-                                                 attrs = [{<<"xmlns">>, <<"jabber:iq:aft_groupchat">>}, {<<"groupid">>, GroupId},
-                                                          {<<"query_type">>, <<"aft_add_member">>}]}]};
-                                _ ->
-                                    case odbc_groupchat:add_members(LServer, GroupId, NewMembers) of
-                                        {atomic, _} ->
-                                            {selected, [<<"name">>], [{GroupName}]} =
-                                                odbc_groupchat:get_groupname_by_groupid(LServer, GroupId),
-                                            ExistsMembersJid = get_user_from_jid(ExistsMembers, []),
-                                            NewMembersJid = get_user_from_jid(NewMembers,[]),
-                                            push_event_message(GroupId, GroupName, LServer, ExistsMembersJid ++ NewMembersJid, NewMembersJid),
-                                            IQ#iq{type = result,
-                                                  sub_el = [SubEl#xmlel{attrs =
-                                                                            [{<<"xmlns">>, <<"jabber:iq:aft_groupchat">>},
-                                                                             {<<"groupid">>, GroupId},
-                                                                             {<<"query_type">>, <<"aft_add_member">>}]}]};
-                                        _ ->
-                                            IQ#iq{type = error, sub_el = []}
-                                    end
-                            end
-                    end;
-                _ ->
-                    IQ#iq{type = error, sub_el = []}
-            end
-    end.
 
 %% @doc create and add members to group
-%% <iq from="cc4bc427-eeaa-41eb-84a7-f713c0205a9f@192.168.1.167/resource" id="2115763" type="set">
-%%   <query xmlns="jabber:iq:aft_groupchat" query_type="aft_group_member" nickname="FirstGroup">
-%%     ["08aa4f13-b3a3-49d2-820c-849d1a9c1bb7@192.168.1.167","cc4bc427-eeaa-41eb-84a7-f713c0205a9f@192.168.1.167"]
-%%   </query>
+%% <iq from="13412345678@localhost/caoyue-PC" id="2115763" type="set">
+%% <query xmlns="aft:iq:groupchat" query_type="aft_group_member" groupname="FirstGroup">
+%%   ["13411111111@localhost","13422222222@localhost"]</query>
 %% </iq>
 %%
-%% <iq from="cc4bc427-eeaa-41eb-84a7-f713c0205a9f@192.168.1.167" type="result"
-%%       to="cc4bc427-eeaa-41eb-84a7-f713c0205a9f@192.168.1.167/caoyue-PC" id="2115763">
-%%   <query xmlns="jabber:iq:aft_groupchat" query_type="aft_group_member" groupid="1" nickname="FirstGroup">
-%%     ["08aa4f13-b3a3-49d2-820c-849d1a9c1bb7@192.168.1.167","cc4bc427-eeaa-41eb-84a7-f713c0205a9f@192.168.1.167"]
-%%   </query>
+%% <iq from="13412345678@localhost" type="result" to="13412345678@localhost/caoyue-PC" id="2115763">
+%% <query xmlns="aft:iq:groupchat" master="13412345678@localhost" query_type="aft_group_member" groupid="33" groupname="FirstGroup">
+%% [{"userjid":"13422222222@localhost","nickname":"n2"},{"userjid":"13411111111@localhost","nickname":"n1"}]</query>
 %% </iq>
 create_and_add(From, _To, #iq{sub_el = SubEl} = IQ) ->
     #jid{luser = LUser, lserver = LServer} = From,
     UserJid = <<LUser/binary, $@, LServer/binary>>,
-    GroupName = xml:get_tag_attr_s(<<"nickname">>, SubEl),
-    MembersList = string:tokens(binary_to_list(xml:get_tag_cdata(SubEl)), "\n ,\"[]"),
+    GroupName = xml:get_tag_attr_s(<<"groupname">>, SubEl),
+    MembersList = mochijson2:decode(xml:get_tag_cdata(SubEl)),
     case MembersList of
         [] ->
             IQ#iq{type = error, sub_el = []};
         _ ->
             case odbc_groupchat:create_and_add(LServer, GroupName, MembersList, UserJid) of
-                {atomic, {selected, _, [{ResultId}]}} ->
+                {ok, Members} ->
+                    [{GroupId, _, _} | _] = Members,
                     MembersJid = [{LUser, LServer} | get_user_from_jid(MembersList, [])],
-                    push_event_message(ResultId, GroupName, LServer, MembersJid, MembersJid),
+                    push_event_message(GroupId, GroupName, LServer, MembersJid, MembersJid),
                     IQ#iq{type = result, sub_el = [SubEl#xmlel{
-                                                     attrs = [{<<"xmlns">>, <<"jabber:iq:aft_groupchat">>},
-                                                              {<<"groupid">>, ResultId},
+                                                     attrs = [{<<"xmlns">>, ?NS_GROUPCHAT},
+                                                              {<<"groupid">>, GroupId},
                                                               {<<"query_type">>, <<"aft_group_member">>},
-                                                              {<<"nickname">>, GroupName}
-                                                             ]}]};
-                _ ->
+                                                              {<<"groupname">>, GroupName},
+                                                              {<<"master">>, UserJid}
+                                                             ],
+                                                     children = [{xmlcdata, list_to_binary(
+                                                                              members_to_json([{Jid, NickName} || {_, Jid, NickName} <- Members]))}]}]};
+                {error, _} ->
                     IQ#iq{type = error, sub_el = []}
             end
     end.
 
 %% @doc get_members by groupid
-%% <iq from="cc4bc427-eeaa-41eb-84a7-f713c0205a9f@192.168.1.167/resource" id="aad5a" type="get">
-%%   <query xmlns="jabber:iq:aft_groupchat" query_type="aft_get_members" groupid="1"/>
+%% <iq from="13412345678@localhost/caoyue-PC" type="set" id="aad5ba">
+%% <query xmlns="aft:iq:groupchat" query_type="aft_get_members" groupid="1"></query>
 %% </iq>
 %%
-%% <iq to="jid" id="2115763" type="result">
-%%   <query xmlns="jabber:iq:aft_groupchat" query_type="aft_get_members">
-%%     ["cc4bc427-eeaa-41eb-84a7-f713c0205a9f@192.168.1.167","cc4bc427-eeaa-41eb-84a7-f713c0205a9f@192.168.1.167"]
-%%   </query>
+%% <iq from="13412345678@localhost" type="result" to="13412345678@localhost/caoyue-PC" id="aad5ba">
+%% <query xmlns="aft:iq:groupchat" query_type="aft_get_members" groupid="1">
+%% [{"userjid":"13411111111@localhost","nickname":"default"}]</query>
 %% </iq>
 get_members(From, _To, #iq{sub_el = SubEl} = IQ) ->
-    #jid{luser = _LUser, lserver = LServer} = From,
+    #jid{luser = LUser, lserver = LServer} = From,
+    UserJid = <<LUser/binary, $@, LServer/binary>>,
     GroupId = xml:get_tag_attr_s(<<"groupid">>, SubEl),
-    case odbc_groupchat:get_members_by_groupid(LServer, GroupId) of
-        {selected, [<<"jid">>], Members} ->
-            Result = string:join([binary_to_list(X) || {X} <- Members], "\",\""),
-            IQ#iq{type = result, sub_el = [SubEl#xmlel{children =
-                                                           [{xmlcdata, list_to_binary("[\"" ++ Result ++ "\"]")}]}]};
+    case odbc_groupchat:is_user_in_group(LServer, UserJid, GroupId) of
+        {ok, true} ->
+            case odbc_groupchat:get_members_by_groupid(LServer, GroupId) of
+                {ok, Members} ->
+                    IQ#iq{type = result, sub_el = [SubEl#xmlel{children =
+                                                                   [{xmlcdata, list_to_binary(members_to_json(Members))}]}]};
+                {error, _} ->
+                    IQ#iq{type = error, sub_el = []}
+            end;
         _ ->
             IQ#iq{type = error, sub_el = []}
     end.
 
-get_members_api(LServer, GroupId) ->
-    case odbc_groupchat:get_members_by_groupid(LServer, GroupId) of
-        {selected, [<<"jid">>], Members} ->
-            R = [jlib:binary_to_jid(X) || {X} <- Members],
-            {ok, [{U, S} || {jid, U, S, _, _, _, _} <- R]};
-        _ ->
-            {error, notexist}
-    end.
+members_to_json(Members) ->
+    JsonArray = [{struct, [{<<"userjid">>, UserJid}, {<<"nickname">>, NickName}]} || {UserJid, NickName} <- Members],
+    mochijson2:encode(JsonArray).
 
 %% @doc get groups by jid
-%% <iq from="cc4bc427-eeaa-41eb-84a7-f713c0205a9f@192.168.1.167/resource" id="aad5a" type="get">
-%%    <query xmlns="jabber:iq:aft_groupchat" query_type="aft_get_groups"/>
+%% <iq from="13412345678@localhost/caoyue-PC" type="set" id="aad5ba">
+%% <query xmlns="aft:iq:groupchat" query_type="aft_get_groups"></query>
 %% </iq>
-%% <iq from="cc4bc427-eeaa-41eb-84a7-f713c0205a9f@192.168.1.167" type="result"
-%%       to="cc4bc427-eeaa-41eb-84a7-f713c0205a9f@192.168.1.167/resource" id="aad5a">
-%%   <query xmlns="jabber:iq:aft_groupchat" query_type="aft_get_groups">
-%%     [{"jid":"1","nickname":"FirstGroup"},{"jid":"2","nickname":"SecondGroup"}]
-%%   </query>
+%%
+%% <iq from="13412345678@localhost" type="result" to="13412345678@localhost/caoyue-PC" id="aad5ba">
+%% <query xmlns="aft:iq:groupchat" query_type="aft_get_groups">
+%% [{"groupid":"2","groupname":"FirstGroup","master":"13412345678@localhost"},
+%% {"groupid":"3","groupname":"FirstGroup","master":"13412345678@localhost"},
+%% {"groupid":"4","groupname":"FirstGroup","master":"13412345678@localhost"}]
+%% </query>
 %% </iq>
 get_groups(From, _To, #iq{sub_el = SubEl} = IQ) ->
     #jid{luser = LUser, lserver = LServer} = From,
-    UserJid = list_to_binary(binary_to_list(LUser) ++ "@" ++ binary_to_list(LServer)),
+    UserJid = <<LUser/binary, $@, LServer/binary>>,
     case odbc_groupchat:get_groups_by_jid(LServer, UserJid) of
-        {selected, [<<"groupid">>, <<"name">>,<<"owner">>], Rs} when is_list(Rs) ->
-            IQ#iq{type = result, sub_el = [SubEl#xmlel{children = [{xmlcdata,list_to_binary(grouplist_to_json(Rs))}]}]};
-        _ ->
+        {ok, Rs} when is_list(Rs) ->
+            IQ#iq{type = result, sub_el = [SubEl#xmlel{children = [{xmlcdata, list_to_binary(grouplist_to_json(Rs))}]}]};
+        {error, _} ->
             IQ#iq{type = error, sub_el = []}
     end.
 
 grouplist_to_json(List) ->
-    JsonArray = [ {struct,[{<<"jid">>, GroupId},
-                           {<<"nickname">>,GroupName},
-                           {<<"master">>,Owner}]} || {GroupId,GroupName,Owner} <- List],
-    mochijson2:encode(JsonArray).
+    case List of
+        [] ->
+            "[]";
+        _ ->
+            JsonArray = [{struct, [{<<"groupid">>, GroupId},
+                                   {<<"groupname">>, GroupName},
+                                   {<<"master">>, Owner}]} || {GroupId, GroupName, Owner} <- List],
+            mochijson2:encode(JsonArray)
+    end.
 
-push_event_message(GroupId, Nickname, Server, ToList, MemberList) ->
+%% @doc set group name
+%% <iq from="13412345678@localhost/caoyue-PC" type="set" id="aad5a">
+%%    <query xmlns="aft:iq:groupchat" query_type="aft_set_groupname" groupid="1" groupname="NewName"></query>
+%% </iq>
+%%
+%% <iq from="13412345678@localhost" type="result" to="13412345678@localhost/caoyue-PC" id="aad5a">
+%%    <query xmlns="aft:iq:groupchat" groupid="1" groupname="NewName"/>
+%% </iq>
+set_groupname(From, _To, #iq{sub_el = SubEl} = IQ) ->
+    #jid{luser = LUser, lserver = LServer} = From,
+    GroupId = xml:get_tag_attr_s(<<"groupid">>, SubEl),
+    UserJid = <<LUser/binary, $@, LServer/binary>>,
+    case odbc_groupchat:is_user_in_group(LServer, UserJid, GroupId) of
+        {ok, true} ->
+            GroupName = xml:get_tag_attr_s(<<"groupname">>, SubEl),
+            T = odbc_groupchat:set_groupname(LServer, GroupId, GroupName),
+            case T of
+                {ok, success} ->
+                    Res = SubEl#xmlel{attrs = [{<<"xmlns">>, ?NS_GROUPCHAT},
+                                               {<<"groupid">>, GroupId}, {<<"groupname">>, GroupName}]},
+                    IQ#iq{type = result, sub_el = [Res]};
+                {error, _} ->
+                    IQ#iq{type = error, sub_el = []}
+            end;
+        _ ->
+            IQ#iq{type = error, sub_el = []}
+    end.
+
+%% @doc remove members from group
+%% <iq from="13412345678@localhost/caoyue-PC" type="set" id="aad5a">
+%% <query xmlns="aft:iq:groupchat" query_type="aft_remove_members" groupid="1">
+%%     ["13411111111@localhost","13422222222@localhost"]</query>
+%% </iq>
+%%
+%% <iq from="1341234578@localhost" type="result" to="1341234578@localhost/caoyue-PC" id="aad5a">
+%% <query xmlns="aft:iq:groupchat" query_type="aft_remove_members" groupid="1">
+%%   ["13411111111@localhost","13422222222@localhost"]</query>
+%% </iq>
+remove_members(From, _To, #iq{sub_el = SubEl} = IQ) ->
+    #jid{luser = LUser, lserver = LServer} = From,
+    GroupId = xml:get_tag_attr_s(<<"groupid">>, SubEl),
+    UserJid = <<LUser/binary, $@, LServer/binary>>,
+    case odbc_groupchat:is_user_in_group(LServer, UserJid, GroupId) of
+        {ok, true} ->
+            MembersList = mochijson2:decode(xml:get_tag_cdata(SubEl)),
+            case odbc_groupchat:remove_members(LServer, GroupId, MembersList) of
+                {ok, success} ->
+                    IQ#iq{type = result, sub_el = [SubEl]};
+                _ ->
+                    IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+            end;
+        _ ->
+            IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+    end.
+
+%% @doc dismiss group, must be owner of the group
+%% <iq from="13412345678@localhost/caoyue-PC" type="set" id="aad5a">
+%% <query xmlns="aft:iq:groupchat" query_type="aft_dismiss_group" groupid="1"></query>
+%% </iq>
+%%
+%% <iq from="1341234578@localhost" type="result" to="1341234578@localhost/caoyue-PC" id="aad5a">
+%% <query xmlns="aft:iq:groupchat" query_type="aft_dismiss_group" groupid="1"></query>
+%% </iq>
+dismiss_group(From, _To, #iq{sub_el = SubEl} = IQ) ->
+    #jid{luser = LUser, lserver = LServer} = From,
+    GroupId = xml:get_tag_attr_s(<<"groupid">>, SubEl),
+    UserJid = <<LUser/binary, $@, LServer/binary>>,
+    case odbc_groupchat:is_user_own_group(LServer, UserJid, GroupId) of
+        {ok, true} ->
+            case odbc_groupchat:get_members_by_groupid(LServer, GroupId) of
+                {ok, Members} ->
+                    case odbc_groupchat:dismiss_group(LServer, GroupId, Members) of
+                        {ok, success} ->
+                            IQ#iq{type = result, sub_el = [SubEl]};
+                        _ ->
+                            IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+                    end;
+                _ ->
+                    IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+            end;
+        _ ->
+
+            IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+    end.
+
+%% @doc set nickname in group
+%% <iq from="13412345678@localhost/caoyue-PC" type="set" id="aad5a">
+%% <query xmlns="aft:iq:groupchat" query_type="aft_set_nickname" groupid="3" nickname="testnick"
+%%       userjid="13412345678@localhost"></query>
+%% </iq>
+%%
+%% <iq from="13412345678@localhost" type="result" to="13412345678@localhost/caoyue-PC" id="aad5a">
+%% <query xmlns="aft:iq:groupchat" query_type="aft_set_nickname" groupid="3"
+%%     nickname="testnick" userjid="13412345678@localhost"/>
+%% </iq>
+set_nickname(From, _To, #iq{sub_el = SubEl} = IQ) ->
+    #jid{luser = LUser, lserver = LServer} = From,
+    GroupId = xml:get_tag_attr_s(<<"groupid">>, SubEl),
+    NickName = xml:get_tag_attr_s(<<"nickname">>, SubEl),
+    UserJid = <<LUser/binary, $@, LServer/binary>>,
+    case odbc_groupchat:set_nickname_in_group(LServer, GroupId, UserJid, NickName) of
+        {ok, success} ->
+            IQ#iq{type = result, sub_el = [SubEl]};
+        _ ->
+            IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+    end.
+
+push_event_message(GroupId, GroupName, Server, ToList, MemberList) ->
     FromString = <<<<"aftgroup_">>/binary, GroupId/binary, $@, Server/binary>>,
     Lang = {<<"xml:lang">>, <<"en">>},
     From = {<<"from">>, FromString},
@@ -214,45 +329,60 @@ push_event_message(GroupId, Nickname, Server, ToList, MemberList) ->
     Contents = event_member_json(MemberList, <<"add">>),
     Packet = {xmlel, <<"message">>, [],
               [{xmlcdata, <<"\n     ">>},
-               {xmlel, <<"body">>, [{<<"groupid">>, GroupId}, {<<"nickname">>, Nickname}],
+               {xmlel, <<"body">>, [{<<"groupid">>, GroupId}, {<<"groupname">>, GroupName}],
                 [{xmlcdata, list_to_binary(Contents)}]},
                {xmlcdata, <<"\n">>}]},
-    FromJID = jlib:make_jid(<<<<"aftgroup_">>/binary, GroupId/binary>>, Server, <<"">>),
+    FromJID = jlib:make_jid(<<<<"aftgroup_">>/binary, GroupId/binary>>, Server, <<>>),
     lists:foreach(fun({U, S}) ->
-                          ToJID = jlib:make_jid(U, S, <<"">>),
+                          ToJID = jlib:make_jid(U, S, <<>>),
                           ToAttr = {<<"to">>, <<U/binary, $@, S/binary>>},
                           ejabberd_router:route(FromJID, ToJID,
                                                 Packet#xmlel{attrs = [From, ToAttr, Type, Lang, Push]}) end,
                   ToList).
 
-event_member_json(MemberList,Action) ->
-    JsonArray = [ {struct,[{<<"jid">>, <<U/binary,$@,S/binary>>},{<<"action">>,Action}]} || {U,S} <- MemberList],
+event_member_json(MemberList, Action) ->
+    JsonArray = [{struct, [{<<"jid">>, <<U/binary, $@, S/binary>>}, {<<"action">>, Action}]} || {U, S} <- MemberList],
     mochijson2:encode(JsonArray).
 
 get_user_from_jid([H | R], Result) ->
-    #jid{luser = U, lserver = S} = jlib:binary_to_jid(list_to_binary(H)),
+    #jid{luser = U, lserver = S} = jlib:binary_to_jid(H),
     get_user_from_jid(R, [{U, S} | Result]);
 get_user_from_jid([], Result) ->
     Result.
 
-process_iq(From, To, #iq{xmlns = <<"jabber:iq:aft_groupchat">>, type = _Type, sub_el = SubEl} = IQ) ->
+is_query_groupchat(Packet) ->
+    case Packet of
+        #xmlel{name = <<"query">>} -> true;
+        _ -> false
+    end.
+
+process_iq(From, To, #iq{xmlns = ?NS_GROUPCHAT, type = _Type, sub_el = SubEl} = IQ) ->
     case is_query_groupchat(SubEl) of
         true ->
-            case aft_query_type(SubEl) of
-                aft_create_group ->
+            case xml:get_tag_attr_s(<<"query_type">>, SubEl) of
+                <<"aft_create_group">> ->
                     create_group(From, To, IQ);
-                aft_add_member ->
+                <<"aft_add_member">> ->
                     add_members(From, To, IQ);
-                aft_get_groups ->
+                <<"aft_get_groups">> ->
                     get_groups(From, To, IQ);
-                aft_get_members ->
+                <<"aft_get_members">> ->
                     get_members(From, To, IQ);
-                aft_group_member ->
+                <<"aft_group_member">> ->
                     create_and_add(From, To, IQ);
-                undefined ->
+                <<"aft_set_groupname">> ->
+                    set_groupname(From, To, IQ);
+                <<"aft_remove_members">> ->
+                    remove_members(From, To, IQ);
+                <<"aft_dismiss_group">> ->
+                    dismiss_group(From, To, IQ);
+                <<"aft_set_nickname">> ->
+                    set_nickname(From, To, IQ);
+                _ ->
                     IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
             end;
-        false -> IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+        false ->
+            IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
     end;
 
 process_iq(_, _, IQ) ->

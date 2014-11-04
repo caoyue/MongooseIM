@@ -321,6 +321,7 @@ CREATE TABLE groupuser (
     id int PRIMARY KEY NOT NULL auto_increment,
     groupid int NOT NULL,
     jid varchar(250) CHARACTER SET binary NOT NULL,
+    nickname varchar(250) CHARACTER SET binary,
     joined_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) CHARACTER SET utf8;
 CREATE INDEX group_jid_index ON groupuser (jid);
