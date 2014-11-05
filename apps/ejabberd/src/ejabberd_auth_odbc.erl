@@ -30,6 +30,7 @@
 %% External exports
 -behaviour(ejabberd_gen_auth).
 -export([start/1,
+         stop/1,
          set_password/3,
          check_password/3,
          check_password/5,
@@ -68,6 +69,9 @@
 %%%----------------------------------------------------------------------
 
 start(_Host) ->
+    ok.
+
+stop(_Host) ->
     ok.
 
 plain_password_required() ->
