@@ -81,7 +81,6 @@ mech_step(#state{step = 3, nonce = Nonce} = State, ClientIn) ->
             {error, <<"bad-protocol">>};
         KeyVals ->
             DigestURI = xml:get_attr_s(<<"digest-uri">>, KeyVals),
-                                                %UserName = xml:get_attr_s(<<"username">>, KeyVals),
             LoginName = proplists:get_value(<<"username">>, KeyVals, <<>>),
             case (State#state.get_info_by_loginname)(LoginName) of
                 error ->

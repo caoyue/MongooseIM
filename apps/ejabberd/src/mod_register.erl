@@ -305,6 +305,7 @@ send_register_email( GUID, User, Server ) ->
             Username = jlib:nodeprep( GUID ),
             LServer = jlib:nameprep( Server ),
             BaseJID = binary_to_list( Username ) ++ "@" ++ binary_to_list( LServer ),
+            %% TODO: how to deploy the web server and the XMPP server?
             Href = "http://" ++ binary_to_list( LServer ) ++ ":5280/verify?token=" ++ BaseJID,
             kissnapp_email:send_register_validate("Kissnapp Register Validation", UserList, Href )
     end.

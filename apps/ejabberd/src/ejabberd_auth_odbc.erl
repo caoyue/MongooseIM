@@ -313,7 +313,7 @@ get_vh_registered_users_number(Server, Opts) ->
 
 -spec get_jid_by_loginname( LoginName :: binary(),
                             Server :: ejabberd:server(),
-                            Opts :: list()) -> binary() | atom().
+                            Opts :: list()) -> binary() | error.
 get_jid_by_loginname( LoginName, Server, Type ) ->
     LServer = jlib:nameprep( Server ),
     case catch odbc_queries:get_jid_by_loginname( LServer, LoginName, Type ) of
@@ -326,7 +326,7 @@ get_jid_by_loginname( LoginName, Server, Type ) ->
 
 -spec get_info_by_loginname( LoginName :: binary(),
                              Server :: ejabberd:server(),
-                             Opts :: list()) -> binary() | atom().
+                             Opts :: list()) -> tuple() | error.
 get_info_by_loginname( LoginName, Server, Type ) ->
     LServer = jlib:nameprep( Server ),
     case catch odbc_queries:get_info_by_loginname( LServer, LoginName, Type ) of

@@ -237,8 +237,8 @@ try_register(User, Server, Password) ->
             end
     end.
 
-%% register by email or passwd. 2014-10-27.
-%% User: email or passwd.
+%% register by email or phone number.
+%% User: email or phone number.
 try_register( User, Server, Password, Loginname, Type ) ->
     %% has check Loginname uniqueness in mod_register.
     case lists:member(jlib:nameprep(Server), ?MYHOSTS) of
@@ -250,9 +250,7 @@ try_register( User, Server, Password, Loginname, Type ) ->
                               {error, not_allowed}, auth_modules(Server)),
             case Res of
                 {atomic, ok} ->
-
-                    ejabberd_hooks:run(register_user, Server,
-                                       [User, Server]),
+                    ejabberd_hooks:run(register_user, Server, [User, Server]),
                     {atomic, ok};
                 _ -> Res
             end;

@@ -59,7 +59,7 @@
 -type sasl_state() :: #sasl_state{}.
 
 -type get_info_by_loginname_fun() :: fun((binary(), binary() ) ->
-                                               error  | _ ).
+                                                error  | _ ).
 
 -type get_password_fun() :: fun((ejabberd:user()) ->
                                        {binary(), ejabberd_auth:authmodule()} | {false, none}
