@@ -7,7 +7,7 @@
 -include("ejabberd.hrl").
 -include("jlib.hrl").
 
--define(NS_GROUPCHAT, <<"aft:iq:groupchat">>).
+-define(NS_GROUPCHAT, <<"aft:groupchat">>).
 
 start(Host, _Opts) ->
     gen_iq_handler:add_iq_handler(ejabberd_sm, Host,
@@ -255,9 +255,9 @@ remove_members(From, _To, #iq{sub_el = SubEl} = IQ) ->
     #jid{luser = LUser, lserver = LServer} = From,
     GroupId = xml:get_tag_attr_s(<<"groupid">>, SubEl),
     UserJid = <<LUser/binary, $@, LServer/binary>>,
+    MembersList = mochijson2:decode(xml:get_tag_cdata(SubEl)),
     case odbc_groupchat:is_user_own_group(LServer, UserJid, GroupId) of
         {ok, true} ->
-            MembersList = mochijson2:decode(xml:get_tag_cdata(SubEl)),
             case odbc_groupchat:remove_members(LServer, GroupId, MembersList) of
                 {ok, success} ->
                     IQ#iq{type = result, sub_el = [SubEl]};
@@ -265,7 +265,22 @@ remove_members(From, _To, #iq{sub_el = SubEl} = IQ) ->
                     IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
             end;
         _ ->
-            IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+            case odbc_groupchat:is_user_in_group(LServer, UserJid, GroupId) of
+                {ok, true} ->
+                    case MembersList of
+                        [Sender] when Sender == UserJid ->
+                            case odbc_groupchat:remove_members(LServer, GroupId, MembersList) of
+                                {ok, success} ->
+                                    IQ#iq{type = result, sub_el = [SubEl]};
+                                _ ->
+                                    IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+                            end;
+                        _ ->
+                            IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+                    end;
+                _ ->
+                    IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+            end
     end.
 
 %% @doc dismiss group, must be owner of the group
