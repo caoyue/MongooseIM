@@ -609,6 +609,11 @@ is_privacy_allow(From, To, Packet, PrivacyList) ->
                [User, Server, PrivacyList,
                 {From, To, Packet}, in]).
 
+is_groupchat_message(Packet) ->
+    case xml:get_tag_cdata(xml:get_subtag(Packet, <<"isGroupChat">>)) of
+        <<"1">> -> true;
+        _ -> false
+    end.
 
 -spec route_message(From :: ejabberd:jid(),
                     To :: ejabberd:jid(),
@@ -617,16 +622,13 @@ route_message(From, To, Packet) ->
     LUser = To#jid.luser,
     LServer = To#jid.lserver,
 
-    %% add group chat. sharp add. 2014-9-23. _begin.
-    %% <message from="13412345678@localhost" xml:lang="en" to="aftgroup_1@localhost">
-    %%   <body>adfadfadf</body>
-    %% </message>
-    case string:left(binary_to_list(LUser), 9) of
-        "aftgroup_" ->
+    %% groupchat message
+    case is_groupchat_message(Packet) of
+        true ->
             GroupId = list_to_binary(string:sub_string(binary_to_list(LUser), 10)),
             case odbc_groupchat:get_members_by_groupid(LServer, GroupId) of
-                {ok, Result} ->
-                    R = [jlib:binary_to_jid(X) || {X} <- Result],
+                {ok, MembersInfoList} ->
+                    R = [jlib:binary_to_jid(Jid) || {Jid, _} <- MembersInfoList],
                     Members = [{U, S} || {jid, U, S, _, _, _, _} <- R],
                     #jid{user = User, server = Server} = From,
                     Sender = {User, Server},
@@ -650,8 +652,6 @@ route_message(From, To, Packet) ->
                     ejabberd_router:route(To, From, Err)
             end;
         _ ->
-            %% _end.
-
             PrioPid = get_user_present_pids(LUser, LServer),
             case catch lists:max(PrioPid) of
                 {Priority, _} when is_integer(Priority), Priority >= 0 ->
