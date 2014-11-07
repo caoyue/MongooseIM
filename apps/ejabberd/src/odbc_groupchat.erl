@@ -18,7 +18,6 @@
 -include("jlib.hrl").
 
 create_group(LServer, UserJid, GroupName) ->
-
     F = fun() ->
                 ejabberd_odbc:sql_query_t([<<"insert into groupinfo(name,owner) values('">>,
                                            ejabberd_odbc:escape(GroupName), "','", ejabberd_odbc:escape(UserJid), "');"]),
@@ -36,7 +35,7 @@ create_group(LServer, UserJid, GroupName) ->
 
 add_members(LServer, GroupId, MembersList) ->
     AddQuery = make_add_query(MembersList, [], GroupId),
-    MembersString = memberslist_to_string(MembersList),
+    MembersString = join_memberslist(MembersList),
     SelectQuery = [<<"select jid,nickname from groupuser where groupid ='">>, ejabberd_odbc:escape(GroupId),
                    <<"' and jid in ('">>, MembersString, <<"');">>],
     F = fun() ->
@@ -68,7 +67,7 @@ create_and_add(LServer, GroupName, MembersList, UserJid) ->
                                            ejabberd_odbc:escape(GroupName), "','", ejabberd_odbc:escape(UserJid), "');"]),
                 Result = ejabberd_odbc:sql_query_t([<<"select last_insert_id();">>]),
                 {selected, _, [{RId}]} = Result,
-                QueryList = make_add_query([UserJid | MembersList], "", RId),
+                QueryList = make_add_query([UserJid | MembersList], [], RId),
                 lists:foreach(fun(X) ->
                                       ejabberd_odbc:sql_query_t(X)
                               end, QueryList),
@@ -120,10 +119,12 @@ is_user_exists(LServer, UserName) ->
                                           ejabberd_odbc:escape(UserName), <<"';">>]),
     case T of
         {selected, [<<"count(username)">>], Count} ->
-            case Count /= [{<<"0">>}] of
-                true -> {ok, true};
-                false -> {ok, false}
-            end;
+          case Count of
+            [{<<"0">>}] ->
+              false;
+            _->
+              true
+          end;
         Error ->
             {error, Error}
     end.
@@ -134,10 +135,12 @@ is_user_in_group(LServer, UserJid, GroupId) ->
                                           ejabberd_odbc:escape(UserJid), <<"';">>]),
     case T of
         {selected, [<<"count(id)">>], Count} ->
-            case Count /= [{<<"0">>}] of
-                true -> {ok, true};
-                false -> {ok, false}
-            end;
+          case Count of
+            [{<<"0">>}] ->
+              false;
+            _->
+              true
+          end;
         Error ->
             {error, Error}
     end.
@@ -148,9 +151,11 @@ is_user_own_group(LServer, UserJid, GroupId) ->
                                           ejabberd_odbc:escape(UserJid), <<"';">>]),
     case T of
         {selected, [<<"count(groupid)">>], Count} ->
-            case Count /= [{<<"0">>}] of
-                true -> {ok, true};
-                false -> {ok, false}
+            case Count of
+              [{<<"0">>}] ->
+                false;
+              _->
+                true
             end;
         Error ->
             {error, Error}
@@ -162,13 +167,13 @@ set_groupname(LServer, GroupId, GroupName) ->
                                           ejabberd_odbc:escape(GroupId), <<"';">>]),
     case T of
         {updated, 1} ->
-            {ok, success};
+            ok;
         Error ->
             {error, Error}
     end.
 
-dismiss_group(LServer, GroupId, MembersList) ->
-    MembersString = memberslist_to_string([Jid || {Jid, _} <- MembersList]),
+dismiss_group(LServer, GroupId, MemberInfoList) ->
+    MembersString = join_memberslist([Jid || {Jid, _} <- MemberInfoList]),
     Query = [[<<"delete from groupinfo where groupid = '">>, ejabberd_odbc:escape(GroupId), <<"';">>],
              [<<"delete from groupuser where groupid ='">>, ejabberd_odbc:escape(GroupId),
               <<"' and jid in ('">>, MembersString, <<"');">>]
@@ -176,19 +181,19 @@ dismiss_group(LServer, GroupId, MembersList) ->
     T = ejabberd_odbc:sql_transaction(LServer, Query),
     case T of
         {atomic, _} ->
-            {ok, success};
+            ok;
         Error ->
             {error, Error}
     end.
 
 remove_members(LServer, GroupId, MembersList) ->
-    MembersString = memberslist_to_string(MembersList),
+    MembersString = join_memberslist(MembersList),
     Query = [<<"delete from groupuser where groupid ='">>, ejabberd_odbc:escape(GroupId),
              <<"' and jid in ('">>, MembersString, <<"');">>],
     T = ejabberd_odbc:sql_query(LServer, Query),
     case T of
         {updated, _} ->
-            {ok, success};
+            ok;
         Error ->
             {error, Error}
     end.
@@ -200,12 +205,12 @@ set_nickname_in_group(LServer, GroupId, UserId, NickName) ->
                                           ejabberd_odbc:escape(UserId), <<"';">>]),
     case T of
         {updated, 1} ->
-            {ok, success};
+            ok;
         Error ->
             {error, Error}
     end.
 
-memberslist_to_string(MembersList) ->
+join_memberslist(MembersList) ->
     binary_join(MembersList, <<"','">>).
 
 
