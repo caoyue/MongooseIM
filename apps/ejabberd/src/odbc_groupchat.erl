@@ -119,12 +119,12 @@ is_user_exists(LServer, UserName) ->
                                           ejabberd_odbc:escape(UserName), <<"';">>]),
     case T of
         {selected, [<<"count(username)">>], Count} ->
-          case Count of
-            [{<<"0">>}] ->
-              false;
-            _->
-              true
-          end;
+            case Count of
+                [{<<"0">>}] ->
+                    false;
+                _ ->
+                    true
+            end;
         Error ->
             {error, Error}
     end.
@@ -135,12 +135,12 @@ is_user_in_group(LServer, UserJid, GroupId) ->
                                           ejabberd_odbc:escape(UserJid), <<"';">>]),
     case T of
         {selected, [<<"count(id)">>], Count} ->
-          case Count of
-            [{<<"0">>}] ->
-              false;
-            _->
-              true
-          end;
+            case Count of
+                [{<<"0">>}] ->
+                    false;
+                _ ->
+                    true
+            end;
         Error ->
             {error, Error}
     end.
@@ -152,10 +152,10 @@ is_user_own_group(LServer, UserJid, GroupId) ->
     case T of
         {selected, [<<"count(groupid)">>], Count} ->
             case Count of
-              [{<<"0">>}] ->
-                false;
-              _->
-                true
+                [{<<"0">>}] ->
+                    false;
+                _ ->
+                    true
             end;
         Error ->
             {error, Error}
@@ -189,16 +189,16 @@ dismiss_group(LServer, GroupId, MembersInfoList) ->
 remove_members(LServer, GroupId, MembersList) ->
     MembersString = join_memberslist(MembersList),
     F = fun() ->
-        Result = ejabberd_odbc:sql_query_t([<<"select jid,nickname from groupuser where groupid ='">>,
-          ejabberd_odbc:escape(GroupId),<<"' and jid in ('">>, MembersString, <<"');">>]),
-        ejabberd_odbc:sql_query_t([<<"delete from groupuser where groupid ='">>, ejabberd_odbc:escape(GroupId),
-          <<"' and jid in ('">>, MembersString, <<"');">>]),
-      Result
-      end,
-    T = ejabberd_odbc:sql_transaction(LServer,F),
+                Result = ejabberd_odbc:sql_query_t([<<"select jid,nickname from groupuser where groupid ='">>,
+                                                    ejabberd_odbc:escape(GroupId), <<"' and jid in ('">>, MembersString, <<"');">>]),
+                ejabberd_odbc:sql_query_t([<<"delete from groupuser where groupid ='">>, ejabberd_odbc:escape(GroupId),
+                                           <<"' and jid in ('">>, MembersString, <<"');">>]),
+                Result
+        end,
+    T = ejabberd_odbc:sql_transaction(LServer, F),
     case T of
-      {atomic, {selected, [<<"jid">>, <<"nickname">>], Rs}} ->
-        {ok,Rs};
+        {atomic, {selected, [<<"jid">>, <<"nickname">>], Rs}} ->
+            {ok, Rs};
         Error ->
             {error, Error}
     end.

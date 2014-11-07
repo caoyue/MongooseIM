@@ -135,7 +135,7 @@ create_and_add(From, _To, #iq{sub_el = SubEl} = IQ) ->
                 {ok, GroupMembersInfo} ->
                     [{GroupId, _, _} | _] = GroupMembersInfo,
                     MembersInfoList = [{Jid, NickName} || {_, Jid, NickName} <- GroupMembersInfo],
-                    push_groupmember(GroupId, GroupName, LServer, [ Jid || {Jid, _} <- MembersInfoList], MembersInfoList, <<"add">>),
+                    push_groupmember(GroupId, GroupName, LServer, [Jid || {Jid, _} <- MembersInfoList], MembersInfoList, <<"add">>),
                     IQ#iq{type = result, sub_el = [SubEl#xmlel{
                                                      attrs = [{<<"xmlns">>, ?NS_GROUPCHAT},
                                                               {<<"groupid">>, GroupId},
@@ -370,8 +370,8 @@ push_groupmember(GroupId, GroupName, Server, ToList, MembersInfoList, Action) ->
                   ToList).
 
 groupmember_json(MembersInfoList, Action) ->
-    JsonArray = [{struct, [{<<"jid">>, Jid },{<<"nickname">>, NickName },
-      {<<"action">>, Action}]} || {Jid,NickName} <- MembersInfoList],
+    JsonArray = [{struct, [{<<"jid">>, Jid}, {<<"nickname">>, NickName},
+                           {<<"action">>, Action}]} || {Jid, NickName} <- MembersInfoList],
     mochijson2:encode(JsonArray).
 
 push_groupinfo(GroupId, GroupName, Server, ToList, Action) ->
