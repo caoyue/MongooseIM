@@ -172,8 +172,8 @@ set_groupname(LServer, GroupId, GroupName) ->
             {error, Error}
     end.
 
-dismiss_group(LServer, GroupId, MemberInfoList) ->
-    MembersString = join_memberslist([Jid || {Jid, _} <- MemberInfoList]),
+dismiss_group(LServer, GroupId, MembersInfoList) ->
+    MembersString = join_memberslist([Jid || {Jid, _} <- MembersInfoList]),
     Query = [[<<"delete from groupinfo where groupid = '">>, ejabberd_odbc:escape(GroupId), <<"';">>],
              [<<"delete from groupuser where groupid ='">>, ejabberd_odbc:escape(GroupId),
               <<"' and jid in ('">>, MembersString, <<"');">>]
@@ -188,12 +188,17 @@ dismiss_group(LServer, GroupId, MemberInfoList) ->
 
 remove_members(LServer, GroupId, MembersList) ->
     MembersString = join_memberslist(MembersList),
-    Query = [<<"delete from groupuser where groupid ='">>, ejabberd_odbc:escape(GroupId),
-             <<"' and jid in ('">>, MembersString, <<"');">>],
-    T = ejabberd_odbc:sql_query(LServer, Query),
+    F = fun() ->
+        Result = ejabberd_odbc:sql_query_t([<<"select jid,nickname from groupuser where groupid ='">>,
+          ejabberd_odbc:escape(GroupId),<<"' and jid in ('">>, MembersString, <<"');">>]),
+        ejabberd_odbc:sql_query_t([<<"delete from groupuser where groupid ='">>, ejabberd_odbc:escape(GroupId),
+          <<"' and jid in ('">>, MembersString, <<"');">>]),
+      Result
+      end,
+    T = ejabberd_odbc:sql_transaction(LServer,F),
     case T of
-        {updated, _} ->
-            ok;
+      {atomic, {selected, [<<"jid">>, <<"nickname">>], Rs}} ->
+        {ok,Rs};
         Error ->
             {error, Error}
     end.
