@@ -256,23 +256,12 @@ try_set_password(User, Server, Password, IQ, SubEl, Lang) ->
                   sub_el = [SubEl, ?ERRT_NOT_ACCEPTABLE(Lang, ErrText)]}
     end.
 
-format_email( Var ) ->
-    case string:str( Var, "@") of
-        0 ->
-            case string:str( Var, "\\40" ) > 0 of
-                true -> re:replace(Var, "\\\\40", "@", [global, {return, list}]);
-                _ -> Var
-            end;
-        _ -> Var
-    end.
-
 %% generate UUID. _begin.
 get_parts(<<TL:32, TM:16, THV:16, CSR:8, CSL:8, N:48>>) ->
     [TL, TM, THV, CSR, CSL, N].
 
 to_string( UUID ) ->
-    %%lists:flatten(io_lib:format("~8.16.0b-~4.16.0b-~4.16.0b-~2.16.0b~2.16.0b-~12.16.0b", get_parts(UUID))).
-    lists:flatten(io_lib:format("~8.16.0b~4.16.0b~4.16.0b~2.16.0b~2.16.0b~12.16.0b", get_parts(UUID))).
+    io_lib:format("~8.16.0b~4.16.0b~4.16.0b~2.16.0b~2.16.0b~12.16.0b", get_parts(UUID)).
 
 v4(R1, R2, R3, R4) ->
     <<R1:48, 4:4, R2:12, 2:2, R3:32, R4:30>>.
@@ -285,22 +274,10 @@ generate_guid() ->
                          crypto:rand_uniform(1, round(math:pow(2, 30))) - 1) ) ).
 %% _end.
 
-
-send_register_email( GUID, User, Server ) ->
-    UserListTmp = case is_binary(User) of
-                      true ->
-                          binary_to_list(User);
-                      _ ->
-                          User
-                  end,
-
-    UserList = case string:str(UserListTmp, "\\40") > 0 of
-                   true -> re:replace(UserListTmp, "\\\\40", "@", [global, {return, list}]);
-                   _ -> UserListTmp
-               end,
-
+send_register_validation( GUID, User, Server ) ->
+    UserList =  binary_to_list(User),
     case string:str(UserList, "@") > 0 of
-        false -> nothing_to_do; %% cellphone enroll.
+        false -> nothing_to_do; %% TOFIX: phone register. SMS?
         true ->
             Username = jlib:nodeprep( GUID ),
             LServer = jlib:nameprep( Server ),
@@ -311,25 +288,16 @@ send_register_email( GUID, User, Server ) ->
     end.
 
 try_register(User, Server, Password, SourceRaw, Lang) ->
-    ListUser = if is_binary( User ) ->
-                       binary_to_list( User );
-                  true ->
-                       User
-               end,
-    Type = case string:str( format_email( ListUser ), "@" ) of
-               0 -> cellphone;
+    Type = case binary:match( User, [<<"@">>] ) of
+               nomatch -> cellphone;
                _ -> email
            end,
+
     case ejabberd_auth:is_loginname_exist( User, Server ) of
         true -> {error, ?ERR_CONFLICT };
         false ->
-                                                %case jlib:is_nodename(User) of
-                                                %    false ->
-                                                %        {error, ?ERR_BAD_REQUEST};
-                                                %    _ ->
             GUID = generate_guid(),
             JID = jlib:make_jid( GUID, Server, <<>> ),
-                                                %JID = jlib:make_jid(User, Server, <<>>),
             Access = gen_mod:get_module_opt(Server, ?MODULE, access, all),
             IPAccess = get_ip_access(Server),
             case {acl:match_rule(Server, Access, JID),
@@ -344,11 +312,9 @@ try_register(User, Server, Password, SourceRaw, Lang) ->
                         true ->
                             case is_strong_password(Server, Password) of
                                 true ->
-                                                %case ejabberd_auth:try_register(
-                                                %       User, Server, Password) of
                                     case ejabberd_auth:try_register( GUID, Server, Password, User, Type ) of
                                         {atomic, ok} ->
-                                            send_register_email(GUID, User, Server),
+                                            send_register_validation(GUID, User, Server),
                                             send_welcome_message(JID),
                                             send_registration_notifications(JID, Source),
                                             ok;
@@ -375,7 +341,6 @@ try_register(User, Server, Password, SourceRaw, Lang) ->
                             {error, ?ERRT_RESOURCE_CONSTRAINT(Lang, ErrText)}
                     end
             end
-                                                %end
     end.
 
 

@@ -27,6 +27,8 @@
 -module(ejabberd_auth_odbc).
 -author('alexey@process-one.net').
 
+-include("jlib.hrl").
+
 %% External exports
 -behaviour(ejabberd_gen_auth).
 -export([start/1,
@@ -50,8 +52,8 @@
          plain_password_required/0,
          get_jid_by_loginname/3,
          get_info_by_loginname/3,
-         account_active_info/2,
-         active_user/2,
+         account_info/2,
+         activate_user/2,
          phonelist_search/2
         ]).
 
@@ -209,47 +211,37 @@ try_register(User, Server, Password) ->
 
 
 try_register(User, Server, Password, Loginname, Type) ->
-    case jlib:nodeprep(User) of
-        error ->
-            {error, invalid_jid};
-        LUser ->
-            Username = ejabberd_odbc:escape(LUser),
-            case prepare_password(Server, Password) of
-                false ->
-                    {error, invalid_password};
-                Pass ->
-                    LServer = jlib:nameprep(Server),
-                                                %case catch odbc_queries:add_user(LServer, Username, Pass, Loginname, Type) of
-                                                %    {updated, 1} ->
-                                                %        {atomic, ok};
-                                                %    _ ->
-                                                %        {atomic, exists}
-                                                %end
-                    El = case Type of
-                             email ->
-                                 { xmlel, <<"EMAIL">>, [], [ {xmlel, <<"USERID">>, [], [ {xmlcdata, Loginname } ]  } ] };
-                             cellphone ->
-                                 { xmlel, <<"TEL">>, [], [ {xmlel, <<"NUMBER">>, [], [ {xmlcdata, Loginname } ]  } ] }
-                         end,
-                    VCardXml = {xmlel,<<"vCard">>,
-                                [ {<<"xmlns">>,<<"vcard-temp">>} ],
-                                [ {xmlel, <<"NICKNAME">>, [], [{xmlcdata, Loginname}] }, El]},
-                    F = fun() ->
-                                case catch odbc_queries:add_user(LServer, Username, Pass, Loginname, Type) of
-                                    {updated, 1} ->
-                                        {ok, VCardSearch} = mod_vcard:prepare_vcard_search_params( LUser, LServer, VCardXml),
-                                        mod_vcard_odbc:set_vcard_with_no_transaction( LUser, LServer, VCardXml, VCardSearch),
-                                        ok;
-                                    _ ->
-                                        exists
-                                end end,
-                    case ejabberd_odbc:sql_transaction( LServer, F ) of
-                        { atomic, ok } ->
-                            ejabberd_hooks:run(vcard_set, LServer, [LUser, LServer, VCardXml]),
-                            {atomic, ok};
-                        _ ->
-                            {atomic, exists}
-                    end
+
+    Username = ejabberd_odbc:escape(User),
+    case prepare_password(Server, Password) of
+        false ->
+            {error, invalid_password};
+        Pass ->
+            LServer = jlib:nameprep(Server),
+            El = case Type of
+                     email ->
+                         { xmlel, <<"EMAIL">>, [], [ {xmlel, <<"USERID">>, [], [ {xmlcdata, Loginname } ]  } ] };
+                     cellphone ->
+                         { xmlel, <<"TEL">>, [], [ {}, {xmlel, <<"NUMBER">>, [], [ {xmlcdata, Loginname } ]  } ] }
+                 end,
+            VCardXml = {xmlel,<<"vCard">>,
+                        [ {<<"xmlns">>,?NS_VCARD} ],
+                        [ {xmlel, <<"NICKNAME">>, [], [{xmlcdata, Loginname}] }, El]},
+            F = fun() ->
+                        case catch odbc_queries:add_user(LServer, Username, Pass, Loginname, Type) of
+                            {updated, 1} ->
+                                {ok, VCardSearch} = mod_vcard:prepare_vcard_search_params( User, LServer, VCardXml),
+                                mod_vcard_odbc:set_vcard_with_no_transaction( User, LServer, VCardXml, VCardSearch),
+                                ok;
+                            _ ->
+                                exists
+                        end end,
+            case ejabberd_odbc:sql_transaction( LServer, F ) of
+                { atomic, ok } ->
+                    ejabberd_hooks:run(vcard_set, LServer, [User, LServer, VCardXml]),
+                    {atomic, ok};
+                _ ->
+                    {atomic, exists}
             end
     end.
 
@@ -337,16 +329,16 @@ get_info_by_loginname( LoginName, Server, Type ) ->
     end.
 
 %% Note: be sure User is exist.
--spec account_active_info(User :: ejabberd:user(),
-                          Server :: ejabberd:server()) -> { binary(), binary() } | error .
-account_active_info( User, Server ) ->
+-spec account_info(User :: ejabberd:user(),
+                   Server :: ejabberd:server()) -> { binary(), binary() } | error .
+account_info( User, Server ) ->
     case jlib:nodeprep(User) of
         error ->
             false;
         LUser ->
             Username = ejabberd_odbc:escape(LUser),
             LServer = jlib:nameprep(Server),
-            case catch odbc_queries:account_active_info( Username, LServer ) of
+            case catch odbc_queries:account_info( Username, LServer ) of
                 {selected, [<<"active">>, <<"created_at">>], [ {Active, TimeStamp} ]} ->
                     { Active, TimeStamp };
                 _ ->
@@ -355,16 +347,16 @@ account_active_info( User, Server ) ->
     end.
 
 %% Note: be sure User is exist.
--spec active_user(User :: ejabberd:user(),
-                  Server :: ejabberd:server()) -> ok | failed .
-active_user( User, Server ) ->
+-spec activate_user(User :: ejabberd:user(),
+                    Server :: ejabberd:server()) -> ok | failed .
+activate_user( User, Server ) ->
     case jlib:nodeprep(User) of
         error ->
             false;
         LUser ->
             Username = ejabberd_odbc:escape(LUser),
             LServer = jlib:nameprep(Server),
-            case catch odbc_queries:active_user( Username, LServer ) of
+            case catch odbc_queries:activate_user( Username, LServer ) of
                 ok ->
                     ok;
                 _ ->

@@ -58,8 +58,8 @@
          get_jid_by_loginname/2,
          get_info_by_loginname/2,
          is_loginname_exist/2,
-         account_active_info/2,
-         active_user/2
+         account_info/2,
+         activate_user/2
         ]).
 
 -export([check_digest/4]).
@@ -334,23 +334,22 @@ is_loginname_exist( LoginName, Server ) ->
 -spec get_jid_by_loginname( LoginName :: binary(),
                             Server :: binary ) -> error | binary().
 get_jid_by_loginname( LoginName, Server ) ->
-    ListLoginName = binary_to_list( LoginName ),
-    Type = case string:str( ListLoginName, "@") of
-               0 -> cellphone;
-               _ -> email
+    Type = case binary:match( LoginName, [<<"@">>] ) of
+            nomatch -> cellphone;
+            _ -> email
            end,
-    ejabberd_auth_odbc:get_jid_by_loginname( list_to_binary( ListLoginName ), Server, Type ).
+
+    ejabberd_auth_odbc:get_jid_by_loginname( LoginName, Server, Type ).
 
 %% Get info by loginname. loginname is cellphone or email.
 -spec get_info_by_loginname( LoginName :: binary(),
                              Server :: binary ) -> error | binary().
 get_info_by_loginname( LoginName, Server ) ->
-    ListLoginName = binary_to_list( LoginName ),
-    Type = case string:str( ListLoginName, "@") of
-               0 -> cellphone;
+    Type = case binary:match( LoginName, [<<"@">>] ) of
+               nomatch -> cellphone;
                _ -> email
            end,
-    ejabberd_auth_odbc:get_info_by_loginname( list_to_binary( ListLoginName ), Server, Type ).
+    ejabberd_auth_odbc:get_info_by_loginname( LoginName, Server, Type ).
 
 
 %% @doc Get the password of the user.
@@ -439,18 +438,16 @@ is_user_exists_in_other_modules_loop([AuthModule|AuthModules], User, Server) ->
 
 
 %% Note: be sure User is exist.
--spec account_active_info(User :: ejabberd:user(),
-                          Server :: ejabberd:server()) -> { binary(), binary() }| error.
-account_active_info( User, Server) ->
-    [M] = auth_modules( Server ),
-    M:account_active_info( User, Server ).
+-spec account_info(User :: ejabberd:user(),
+                   Server :: ejabberd:server()) -> { binary(), binary() }| error.
+account_info( User, Server) ->
+    ejabberd_auth_odbc:account_info( User, Server ).
 
 %% Note: be sure User is exist.
--spec active_user(User :: ejabberd:user(),
+-spec activate_user(User :: ejabberd:user(),
                   Server :: ejabberd:server()) -> ok | failed .
-active_user( User, Server ) ->
-    [M] = auth_modules( Server ),
-    M:active_user( User, Server ).
+activate_user( User, Server ) ->
+    ejabberd_auth_odbc:activate_user( User, Server ).
 
 %% @doc Remove user.
 %% Note: it may return ok even if there was some problem removing the user.

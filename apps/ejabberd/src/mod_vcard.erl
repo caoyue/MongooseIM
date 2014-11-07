@@ -138,7 +138,7 @@ init([VHost, Opts]) ->
     gen_iq_handler:add_iq_handler(ejabberd_local, VHost, ?NS_VCARD,
                                   ?MODULE,process_local_iq, IQDisc),
 
-    gen_iq_handler:add_iq_handler( ejabberd_sm, VHost, ?NS_AFT_SEARCH_PHONELIST,
+    gen_iq_handler:add_iq_handler( ejabberd_sm, VHost, ?NS_SEARCH_PHONELIST,
                                   ?MODULE, process_search_phonelist, IQDisc),
 
     DirectoryHost = gen_mod:get_opt_host(VHost, Opts, "vjud.@HOST@"),
@@ -288,7 +288,7 @@ config_change(Acc, _, _, _) ->
 %% process_search_phonelist.
 %%
 %% receive:
-%% <iq from="base@54.255.140.120/res" id="4923672" type="set">
+%% <iq from="base@54.255.140.120/res" id="5244001" type="set">
 %%   <search xmlns="jabber:iq:aft_search" search_type="contact_phone_list">
 %%       13837125213,13598032758,15041129527, ...
 %%   </search>
@@ -300,6 +300,8 @@ config_change(Acc, _, _, _) ->
 %%     {"people":[{"15225181538":"jid@54.255.140.120"},{"15225181539":"jid@54.255.140.120"}]}
 %%   </search>
 %% </iq>
+%%
+%% if result is emtpy,  search will be emtpy xml element:<search/>.
 %% ------------------------------------------------------------------
 process_search_phonelist( From, _To, #iq{type = set, sub_el = SubEl} = IQ ) ->
   #jid{lserver = LServer} = From,
@@ -325,9 +327,9 @@ case PhoneList of
   end.
 
 format_to_json( JIDList, LServer ) ->
-  Acc0 = <<"{\"people\":[">>,
+  Acc0 = <<>>,
   Result = lists:foldl( fun( {Number, UserName}, Acc ) ->
-    Acc1 = case Acc /= acc0 of
+    Acc1 = case Acc /= Acc0 of
             true -> << Acc/binary, "," >>;
             _ -> Acc
            end,
@@ -337,7 +339,7 @@ format_to_json( JIDList, LServer ) ->
         "@", LServer/binary, "\"}" >>
       end,
       Acc0, JIDList ),
-  << Result/binary, "]}">>.
+  << "{\"people\":[", Result/binary, "]}">>.
 
 
 %% ------------------------------------------------------------------
@@ -359,6 +361,30 @@ mod_vcard_backend(Backend) when is_atom(Backend) ->
        atom_to_list(Backend),
        ".\n"]).
 
+%% ------------------------------------------------------------------
+%% request:
+%% <iq to="vjud.54.255.140.120" id="2224356" type="set">
+%%   <query xmlns="jabber:iq:search">
+%%     <x xmlns="jabber:x:data" search_ID_type="phone" type="aft_submit">
+%%       15225181538
+%%     </x >
+%%   </query>
+%% </iq>
+%%
+%%
+%% return:
+%% <iq from='vjud.192.168.11.132' to='jid@192.168.11.132/WIN-MATUT28IVN1' id='2224356' type='result'>
+%%   <query xmlns='jabber:iq:search'>
+%%     <x xmlns='jabber:x:data' search_ID_type='phone' type='result'>
+%%       {15225181538:[{jid:123}, {nickname:xxx},{phote:xxxxxxxxxx}]
+%%     </x>
+%%   </query>
+%% </iq>
+%%
+%% parse_aft_submit_data argument is xmlel of 'x'.
+%%
+%% make_search_response will return resule.
+%% ------------------------------------------------------------------
 parse_aft_submit_data( #xmlel{name = <<"x">>, attrs = Attrs, children = Els} ) ->
   case xml:get_attr_s(<<"type">>, Attrs) of
     <<"aft_submit">> ->
@@ -417,7 +443,6 @@ make_search_response( Key, JID, NickName, Photo, IQ, Type  ) ->
         children =
         [ {xmlcdata,  Json3 }]
       }]}]}.
-
 
 
 %% ------------------------------------------------------------------
@@ -580,7 +605,7 @@ prepare_vcard_search_params(User, VHost, VCARD) ->
     EMail1   = xml:get_path_s(VCARD, [{elem, <<"EMAIL">>},
                                       {elem, <<"USERID">>}, cdata]),
     EMail2   = xml:get_path_s(VCARD, [{elem, <<"EMAIL">>}, cdata]),
-    Cellphone= xml:get_path_s(VCARD, [{elem, <<"TEL">>},
+    Tel      = xml:get_path_s(VCARD, [{elem, <<"TEL">>},
                                       {elem, <<"NUMBER">>}, cdata]),
     OrgName  = xml:get_path_s(VCARD, [{elem, <<"ORG">>},
                                       {elem, <<"ORGNAME">>}, cdata]),
@@ -603,7 +628,7 @@ prepare_vcard_search_params(User, VHost, VCARD) ->
     LCTRY     = stringprep:tolower(CTRY),
     LLocality = stringprep:tolower(Locality),
     LEMail    = stringprep:tolower(EMail),
-    LCellphone= stringprep:tolower(Cellphone),
+    LTel      = stringprep:tolower(Tel),
     LOrgName  = stringprep:tolower(OrgName),
     LOrgUnit  = stringprep:tolower(OrgUnit),
 
@@ -620,7 +645,7 @@ prepare_vcard_search_params(User, VHost, VCARD) ->
         (LCTRY     == error) or
         (LLocality == error) or
         (LEMail    == error) or
-        (LCellphone== error) or
+        (LTel      == error) or
         (LOrgName  == error) or
         (LOrgUnit  == error) ->
             {error, badarg};
@@ -637,7 +662,7 @@ prepare_vcard_search_params(User, VHost, VCARD) ->
                                ctry      = CTRY,     lctry      = b2l(LCTRY),
                                locality  = Locality, llocality  = b2l(LLocality),
                                email     = EMail,    lemail     = b2l(LEMail),
-                               cellphone = Cellphone,lcellphone = b2l(LCellphone),
+                               tel       = Tel,      ltel       = b2l(LTel),
                                orgname   = OrgName,  lorgname   = b2l(LOrgName),
                                orgunit   = OrgUnit,  lorgunit   = b2l(LOrgUnit)
                               }}
@@ -657,7 +682,7 @@ get_default_reported_fields(Lang) ->
                        ?TLFIELD(<<"text-single">>, <<"Country">>, <<"ctry">>),
                        ?TLFIELD(<<"text-single">>, <<"City">>, <<"locality">>),
                        ?TLFIELD(<<"text-single">>, <<"Email">>, <<"email">>),
-                       ?TLFIELD(<<"text-single">>, <<"cellphone">>,<<"lcellphone">>),
+                       ?TLFIELD(<<"text-single">>, <<"tel">>,<<"ltel">>),
                        ?TLFIELD(<<"text-single">>, <<"Organization Name">>, <<"orgname">>),
                        ?TLFIELD(<<"text-single">>, <<"Organization Unit">>, <<"orgunit">>)
                       ]}.

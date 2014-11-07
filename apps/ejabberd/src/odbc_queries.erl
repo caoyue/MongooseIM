@@ -103,8 +103,8 @@
          remove_offline_messages/3,
          get_jid_by_loginname/3,
          get_info_by_loginname/3,
-         account_active_info/2,
-         active_user/2,
+         account_info/2,
+         activate_user/2,
          set_vcard_with_no_transaction/28]).
 
 %% We have only two compile time options for db queries:
@@ -597,8 +597,8 @@ del_user_private_storage(LServer, Username) ->
       LServer,
       [<<"delete from private_storage where username='">>, Username, "';"]).
 
-set_vcard_with_no_transaction(LServer, LUsername, SBDay, SCTRY, SEMail, SCellphone, SFN, SFamily, SGiven,
-                              SLBDay, SLCTRY, SLEMail, SLCellphone, SLFN, SLFamily, SLGiven, SLLocality,
+set_vcard_with_no_transaction(LServer, LUsername, SBDay, SCTRY, SEMail, STel, SFN, SFamily, SGiven,
+                              SLBDay, SLCTRY, SLEMail, SLTel, SLFN, SLFamily, SLGiven, SLLocality,
                               SLMiddle, SLNickname, SLOrgName, SLOrgUnit, SLocality, SMiddle,
                               SNickname, SOrgName, SOrgUnit, SVCARD, Username) ->
     update_t(<<"vcard">>,
@@ -627,8 +627,8 @@ set_vcard_with_no_transaction(LServer, LUsername, SBDay, SCTRY, SEMail, SCellpho
                   <<"llocality">>, SLLocality,
                   <<"email">>, SEMail,
                   <<"lemail">>, SLEMail,
-                  <<"cellphone">>, SCellphone,
-                  <<"lcellphone">>, SLCellphone,
+                  <<"tel">>, STel,
+                  <<"ltel">>, SLTel,
                   <<"orgname">>, SOrgName,
                   <<"lorgname">>, SLOrgName,
                   <<"orgunit">>, SOrgUnit,
@@ -636,8 +636,8 @@ set_vcard_with_no_transaction(LServer, LUsername, SBDay, SCTRY, SEMail, SCellpho
                  [<<"lusername='">>, LUsername, <<"' and server='">>, LServer, "'"]).
 
 
-set_vcard(LServer, LUsername, SBDay, SCTRY, SEMail, SCellphone, SFN, SFamily, SGiven,
-          SLBDay, SLCTRY, SLEMail, SLCellphone, SLFN, SLFamily, SLGiven, SLLocality,
+set_vcard(LServer, LUsername, SBDay, SCTRY, SEMail, STel, SFN, SFamily, SGiven,
+          SLBDay, SLCTRY, SLEMail, SLTel, SLFN, SLFamily, SLGiven, SLLocality,
           SLMiddle, SLNickname, SLOrgName, SLOrgUnit, SLocality, SMiddle,
           SNickname, SOrgName, SOrgUnit, SVCARD, Username) ->
     ejabberd_odbc:sql_transaction(
@@ -669,8 +669,8 @@ set_vcard(LServer, LUsername, SBDay, SCTRY, SEMail, SCellphone, SFN, SFamily, SG
                             <<"llocality">>, SLLocality,
                             <<"email">>, SEMail,
                             <<"lemail">>, SLEMail,
-                            <<"cellphone">>, SCellphone,
-                            <<"lcellphone">>, SLCellphone,
+                            <<"tel">>, STel,
+                            <<"ltel">>, SLTel,
                             <<"orgname">>, SOrgName,
                             <<"lorgname">>, SLOrgName,
                             <<"orgunit">>, SOrgUnit,
@@ -1233,13 +1233,13 @@ get_info_by_loginname( LServer, LoginName, Type ) ->
       LServer,
       [Sel, LoginName, <<"';">>]).
 
-account_active_info( Username, LServer ) ->
+account_info( Username, LServer ) ->
     ejabberd_odbc:sql_query(
       LServer,
       [<<"select active, created_at from users where username='">>, Username, <<"';">>]).
 
 
-active_user( Username, LServer ) ->
+activate_user( Username, LServer ) ->
     ejabberd_odbc:sql_transaction(
       LServer,
       fun() ->

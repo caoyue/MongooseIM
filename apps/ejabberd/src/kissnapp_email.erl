@@ -1,22 +1,22 @@
 %%%-------------------------------------------------------------------
-%%% @author Administrator
-%%% @copyright (C) 2014, <COMPANY>
 %%% @doc
-%%% 通过mailgun (https://mailgun.com/cp) 提供的免费https接口发送邮件
-%%% @end
-%%% Created : 20. 八月 2014 下午2:53
+%%% send email with mailgun(https://mailgun.com/cp) https API.
 %%%-------------------------------------------------------------------
 -module(kissnapp_email).
--author("yoolo").
 
 
 %% API
--export([send_text/3,send_html/3,send_register_validate/3,test_sendtext/0,test_sendhtml/0,test_send_register_validate/0]).
+-export([send_text/3,
+         send_html/3,
+         send_register_validate/3,
+         test_sendtext/0,
+         test_sendhtml/0,
+         test_send_register_validate/0]).
 
-%% 发送文本内容邮件
-%% Subject 邮件标题
-%% ToEmail 收件人
-%% Text    邮件内容
+%% desc:    send text  email.
+%% Subject: email subject.
+%% ToEmail: recipient email adress.
+%% html: content.
 send_text(Subject,ToEmail,Text) ->
   inets:start(),
   ssl:start(),
@@ -35,10 +35,11 @@ send_text(Subject,ToEmail,Text) ->
   %io:format("Send Result ~p~n ~p~n",[Body, R]).
   httpc:request(Method,{URL, Header, Type, Body}, HTTPOptions, Options).
 
-%% 发送HTML内容邮件
-%% Subject 邮件标题
-%% ToEmail 收件人
-%% Html    邮件内容
+
+%% desc:    send html file email.
+%% Subject: email subject.
+%% ToEmail: recipient email adress.
+%% html: content.
 send_html(Subject, ToEmail, Html) ->
   inets:start(),
   ssl:start(),
@@ -58,10 +59,10 @@ send_html(Subject, ToEmail, Html) ->
   httpc:request(Method,{URL, Header, Type, Body}, HTTPOptions, Options).
 
 
-%% 发送注册验证接口
-%% Subject 邮件标题
-%% ToEmail 收件人
-%% Content 链接地址
+%% desc:    interface for send email for verification.
+%% Subject: email subject.
+%% ToEmail: recipient email adress.
+%% Content: link address.
 send_register_validate(Subject,ToEmail,Content)->
   Chtml="<!DOCTYPE html>
   <html>
@@ -77,14 +78,14 @@ send_register_validate(Subject,ToEmail,Content)->
   </html>",
   send_html(Subject,ToEmail,Chtml).
 
-% 测试发送
+%% test send tesxt.
 test_sendtext()->
   send_text("Kissnapp Validate Email","jaypkwyl@163.com","Hello,World!").
 
-% 测试发送邮件html
+%% test send html.
 test_sendhtml()->
   send_html("Kissnapp Validate Email","jaypkwyl@163.com","Hello,World!").
 
-% 测试发送邮件注册验证邮件
+%% test send email for verification.
 test_send_register_validate()->
   send_register_validate("Kissnapp Register Vilidate","jaypkwyl@163.com","http://www.baidu.com").

@@ -141,7 +141,7 @@ response_has_acvtived( Req ) ->
     cowboy_req:reply( 200,
                       [{<<"content-type">>,
                         <<"text/html">>}
-                      ], <<?PAGE_FRONT/binary, "Your account have already avtived, you can login kissnapp now.", ?PAGE_END/binary>>, Req ).
+                      ], <<?PAGE_FRONT/binary, "Your account have already acvtived, you can login kissnapp now.", ?PAGE_END/binary>>, Req ).
 
 
 response_timeout( Req ) ->
@@ -158,24 +158,27 @@ handle(Req, State) ->
             S = list_to_binary( Server ),
             case ejabberd_auth:is_user_exists( U, S ) of
                 true ->
-                    case ejabberd_auth:account_active_info( U, S ) of
+                    case ejabberd_auth:account_info( U, S ) of
                       error ->
-                        response_failed( Req );
+                        { ok, Req2 } = response_failed( Req );
                       { <<"true">>, _TimeStamp } ->
-                        response_has_acvtived( Req );
+                        { ok, Req2 } = response_has_acvtived( Req );
                       { <<"false">>, TimeStamp } ->
-                        %%add check timeout. fix me???
-                        case ejabberd_auth:active_user( U, S ) of
-                          ok -> response_ok ( Req );
-                          _ -> response_failed( Req )
+                        %%TOFIX: check timeout.
+                        case ejabberd_auth:activate_user( U, S ) of
+                          ok ->
+                            { ok, Req2 } = response_ok ( Req );
+                          _ ->
+                            { ok, Req2 } = response_failed( Req )
                         end
                     end;
                 _ ->
-                    response_not_author( Req )
-            end;
+                  { ok, Req2 } = response_not_author( Req )
+            end,
+            {ok, Req2, State };
         { false, _ } ->
             { ok, Req2 } = response_not_fount( Req ),
-            { ok, Req2, Req }
+            { ok, Req2, State }
     end.
 
 terminate(_Reason, _Req, _State) ->
