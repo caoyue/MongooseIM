@@ -610,9 +610,14 @@ is_privacy_allow(From, To, Packet, PrivacyList) ->
                 {From, To, Packet}, in]).
 
 is_groupchat_message(Packet) ->
-    case xml:get_tag_cdata(xml:get_subtag(Packet, <<"isGroupChat">>)) of
-        <<"1">> -> true;
-        _ -> false
+    case xml:get_subtag(Packet, <<"isGroupChat">>) of
+        false -> false;
+        Tag ->
+            case xml:get_tag_cdata(Tag) of
+                <<"1">> -> true;
+                _ -> false
+            end
+
     end.
 
 -spec route_message(From :: ejabberd:jid(),
@@ -891,5 +896,5 @@ sm_backend(Backend) ->
 -spec backend() -> atom().
 backend() ->
     ejabberd_sm_",
-      atom_to_list(Backend),
+            atom_to_list(Backend),
     ".\n"]).
