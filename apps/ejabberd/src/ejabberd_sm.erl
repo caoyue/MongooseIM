@@ -609,7 +609,14 @@ is_privacy_allow(From, To, Packet, PrivacyList) ->
                [User, Server, PrivacyList,
                 {From, To, Packet}, in]).
 
-is_groupchat_message(Packet) ->
+
+%% server-to-client group messages are treated as normal messages;
+%% client-to-server group messages don't have a SubTag named "sender",
+%% the server must add it to the packet and set its value as the sender's jid,
+%% then send it to other users in this group.
+%% according to this, we can checkout which message flow it is,
+%% client-to-server or server-to-client, and give a different handler.
+is_client_to_server_groupmessage(Packet) ->
     case xml:get_subtag(Packet, <<"info">>) of
         false -> false;
         InfoTag ->
@@ -638,8 +645,8 @@ route_message(From, To, Packet) ->
     LServer = To#jid.lserver,
 
     %% @doc groupchat message
-    %% https://github.com/ZekeLu/MongooseIM/wiki/Extending-XMPP#messages
-    case is_groupchat_message(Packet) of
+    %% https://github.com/ZekeLu/MongooseIM/wiki/Extending-XMPP#10-send-message-to-a-group
+    case is_client_to_server_groupmessage(Packet) of
         false ->
             PrioPid = get_user_present_pids(LUser, LServer),
             case catch lists:max(PrioPid) of
