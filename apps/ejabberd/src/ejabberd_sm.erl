@@ -610,15 +610,25 @@ is_privacy_allow(From, To, Packet, PrivacyList) ->
                 {From, To, Packet}, in]).
 
 is_groupchat_message(Packet) ->
-    case xml:get_subtag(Packet, <<"isGroupChat">>) of
+    case xml:get_subtag(Packet, <<"info">>) of
         false -> false;
-        Tag ->
-            case xml:get_tag_cdata(Tag) of
-                <<"1">> -> true;
-                _ -> false
+        InfoTag ->
+            case xml:get_tag_attr_s(<<"groupChat">>, InfoTag) of
+                <<"1">> ->
+                    case xml:get_subtag(InfoTag, <<"sender">>) of
+                        false ->
+                            InfoTag;
+                        _ ->
+                            false
+                    end;
+                _ ->
+                    false
             end
-
     end.
+
+append_sender(SenderJidBin, InfoTag) ->
+    SendEl = [{xmlel, <<"sender">>, [], [{xmlcdata, SenderJidBin}]}],
+    xml:append_subtags(InfoTag, SendEl).
 
 -spec route_message(From :: ejabberd:jid(),
                     To :: ejabberd:jid(),
@@ -627,36 +637,10 @@ route_message(From, To, Packet) ->
     LUser = To#jid.luser,
     LServer = To#jid.lserver,
 
-    %% groupchat message
+    %% @doc groupchat message
+    %% https://github.com/ZekeLu/MongooseIM/wiki/Extending-XMPP#messages
     case is_groupchat_message(Packet) of
-        true ->
-            GroupId = list_to_binary(string:sub_string(binary_to_list(LUser), 10)),
-            case odbc_groupchat:get_members_by_groupid(LServer, GroupId) of
-                {ok, MembersInfoList} ->
-                    R = [jlib:binary_to_jid(Jid) || {Jid, _} <- MembersInfoList],
-                    Members = [{U, S} || {jid, U, S, _, _, _, _} <- R],
-                    #jid{user = User, server = Server} = From,
-                    Sender = {User, Server},
-                    #jid{user = _, server = ToServer} = To,
-                    OtherMembers = lists:delete(Sender, Members),
-                    Lang = lists:keyfind(<<"xml:lang">>, 1, Packet#xmlel.attrs),
-                    lists:foreach(fun({BinU, BinS}) ->
-                                          FU = <<<<"aftgroup_">>/binary, GroupId/binary>>,
-                                          Attrs = [{<<"from">>, <<FU/binary, $@, ToServer/binary>>},
-                                                   {<<"to">>, <<BinU/binary, $@, BinS/binary>>},
-                                                   {<<"type">>, <<"chat">>},
-                                                   Lang,
-                                                   {<<"user">>, jlib:jid_to_binary(From)}],
-                                          ejabberd_router:route(jlib:make_jid(FU, ToServer, <<>>),
-                                                                jlib:make_jid(BinU, BinS, <<>>),
-                                                                Packet#xmlel{attrs = Attrs})
-                                  end,
-                                  OtherMembers);
-                {error, _} ->
-                    Err = jlib:make_error_reply(Packet, ?ERR_SERVICE_UNAVAILABLE),
-                    ejabberd_router:route(To, From, Err)
-            end;
-        _ ->
+        false ->
             PrioPid = get_user_present_pids(LUser, LServer),
             case catch lists:max(PrioPid) of
                 {Priority, _} when is_integer(Priority), Priority >= 0 ->
@@ -696,6 +680,33 @@ route_message(From, To, Packet) ->
                                     ejabberd_router:route(To, From, Err)
                             end
                     end
+            end;
+        InfoTag ->
+            GroupId = LUser,
+            SenderJidBin = jlib:jid_to_binary({From#jid.user, From#jid.server, <<>>}),
+            case odbc_groupchat:get_members_by_groupid(LServer, GroupId) of
+                {ok, MembersInfoList} ->
+                    Lang = lists:keyfind(<<"xml:lang">>, 1, Packet#xmlel.attrs),
+                    NewInfoTag = append_sender(SenderJidBin, InfoTag),
+                    lists:foreach(fun({MemberJidBin, _Nickname})
+                                        when MemberJidBin =:= SenderJidBin
+                                             ->
+                                          ok;
+                                     ({MemberJidBin, _Nickname}) ->
+                                          GroupJid = To,
+                                          GroupJidBin = jlib:jid_to_binary(GroupJid),
+                                          Attrs = [{<<"from">>, GroupJidBin},
+                                                   {<<"to">>, MemberJidBin},
+                                                   {<<"type">>, <<"chat">>},
+                                                   Lang],
+                                          ejabberd_router:route(GroupJid,
+                                                                jlib:binary_to_jid(MemberJidBin),
+                                                                Packet#xmlel{attrs = Attrs, children = [NewInfoTag]})
+                                  end,
+                                  MembersInfoList);
+                {error, _} ->
+                    Err = jlib:make_error_reply(Packet, ?ERR_SERVICE_UNAVAILABLE),
+                    ejabberd_router:route(To, From, Err)
             end
     end.
 
@@ -896,5 +907,5 @@ sm_backend(Backend) ->
 -spec backend() -> atom().
 backend() ->
     ejabberd_sm_",
-            atom_to_list(Backend),
+      atom_to_list(Backend),
     ".\n"]).
