@@ -295,7 +295,7 @@ try_register(User, Server, Password, SourceRaw, Lang) ->
                _ -> email
            end,
 
-    case ejabberd_auth:loginname_exist( User, Server ) of
+    case ejabberd_auth:loginname_exists( User, Server ) of
         true -> {error, ?ERR_CONFLICT };
         false ->
             GUID = generate_guid(),

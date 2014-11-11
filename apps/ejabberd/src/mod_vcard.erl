@@ -284,24 +284,8 @@ config_change(Acc, Host, ldap, _NewConfig) ->
     Acc;
 config_change(Acc, _, _, _) ->
     Acc.
-%% ------------------------------------------------------------------
-%% process_search_phonelist.
-%%
-%% receive:
-%% <iq from="base@54.255.140.120/res" id="5244001" type="set">
-%%   <search xmlns="jabber:iq:aft_search" search_type="contact_phone_list">
-%%       13837125213,13598032758,15041129527, ...
-%%   </search>
-%% </iq>
-%%
-%% return:
-%% <iq xmlns="jabber:client" from="baseJID@54.255.140.120" to="baseJID@54.255.140.120/Res" type="result" id="5244001">
-%%   <search xmlns="jabber:iq:aft_search" search_type="contact_phone_list">
-%%     {"people":[{"15225181538":"jid@54.255.140.120"},{"15225181539":"jid@54.255.140.120"}]}
-%%   </search>
-%% </iq>
-%% ------------------------------------------------------------------
-process_search_phonelist(From, _To, #iq{type = set, sub_el = SubEl} = IQ) ->
+
+process_search_phonelist(From, _To, #iq{type = get, sub_el = SubEl} = IQ) ->
     #jid{lserver = LServer} = From,
     PhoneList = case xml:get_tag_attr(<<"search_type">>, SubEl) of
                     {value, <<"contact_phone_list">>} ->
@@ -322,11 +306,13 @@ process_search_phonelist(From, _To, #iq{type = set, sub_el = SubEl} = IQ) ->
             R1 = ejabberd_auth_odbc:phonelist_search(PhoneList, LServer),
             R2 = format_to_json(R1, LServer),
             IQ#iq{type = result, sub_el = SubEl#xmlel{children = [{xmlcdata, R2}]}}
-    end.
+    end;
+process_search_phonelist( _From, _To, #iq{ sub_el = SubEl} = IQ ) ->
+  IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}.
 
 format_to_json(JIDList, LServer) ->
     List = [{struct, [{Number, <<UserName/binary, "@", LServer/binary>>}]} || {Number, UserName} <- JIDList],
-    Result = {struct, [{<<"people">>, List}]},
+    Result = {struct, [{people, List}]},
     iolist_to_binary(mochijson2:encode(Result)).
 
 %% ------------------------------------------------------------------
@@ -348,31 +334,6 @@ mod_vcard_backend(Backend) when is_atom(Backend) ->
       atom_to_list(Backend),
       ".\n"]).
 
-
-%% ------------------------------------------------------------------
-%% request:
-%% <iq to="vjud.54.255.140.120" id="2224356" type="set">
-%%   <query xmlns="jabber:iq:search">
-%%     <x xmlns="jabber:x:data" search_ID_type="phone" type="aft_submit">
-%%       15225181538
-%%     </x >
-%%   </query>
-%% </iq>
-%%
-%%
-%% return:
-%% <iq from='vjud.192.168.11.132' to='jid@192.168.11.132/WIN-MATUT28IVN1' id='2224356' type='result'>
-%%   <query xmlns='jabber:iq:search'>
-%%     <x xmlns='jabber:x:data' search_ID_type='phone' type='result'>
-%%       {15225181538:[{jid:123}, {nickname:xxx},{photo:xxxxxxxxxx}]
-%%     </x>
-%%   </query>
-%% </iq>
-%%
-%% parse_aft_submit_data argument is xmlel of 'x'.
-%%
-%% make_search_response will return resule.
-%% ------------------------------------------------------------------
 parse_aft_submit_data(#xmlel{name = <<"x">>, attrs = Attrs, children = Els}) ->
     case xml:get_attr_s(<<"type">>, Attrs) of
         <<"aft_submit">> ->
@@ -414,13 +375,13 @@ make_search_response(Key, JID, NickName, Photo, IQ, Type) ->
     List = [],
     List1 = case Photo of
                 nophoto -> List;
-                _ -> [{struct, [{<<"photo">>, <<"abcDFeFx=DFKJd">>}]} | List]
+                _ -> [{struct, [{photo, Photo}]} | List]
             end,
     List2 = case NickName of
                 <<"">> -> List1;
-                _ -> [{struct, [{<<"nickname">>, <<"123">>}]} | List1]
+                _ -> [{struct, [{nickname, NickName}]} | List1]
             end,
-    List3 = [{struct, [{<<"jid">>, JID}]} | List2],
+    List3 = [{struct, [{jid, JID}]} | List2],
     Result = {struct, [{Key, List3}]},
     BinResult = iolist_to_binary(mochijson2:encode(Result)),
 

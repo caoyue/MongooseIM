@@ -57,7 +57,7 @@
          entropy/1,
          get_jid_by_loginname/2,
          get_info_by_loginname/2,
-         loginname_exist/2,
+         loginname_exists/2,
          account_info/2,
          activate_user/2
         ]).
@@ -324,7 +324,7 @@ get_vh_registered_users_number(Server, Opts) ->
         end, auth_modules(Server))).
 
 
-loginname_exist(LoginName, Server) ->
+loginname_exists(LoginName, Server) ->
     case get_jid_by_loginname(LoginName, Server) of
         error -> false;
         _ -> true
