@@ -125,7 +125,7 @@
 %% new function (introduced in R12B-0).
 join([], _Sep) ->
     [];
-join([H|T], Sep) ->
+join([H | T], Sep) ->
     [H, [[Sep, X] || X <- T]].
 
 %% Note: escape functions (`escape_string/1' and `escape_like_string/1')
@@ -148,7 +148,7 @@ escape_like_string(S) when is_list(S) ->
 
 escape_like_character($%) -> "\\%";
 escape_like_character($_) -> "\\_";
-escape_like_character(C)  -> escape_character(C).
+escape_like_character(C) -> escape_character(C).
 
 
 %% -----------------
@@ -194,17 +194,17 @@ update_set_t(Table, FieldsVals, Where) ->
                <<") values ('">>, join(Vals, "', '"), "');"])
     end.
 
-odds([X,_|T]) -> [X|odds(T)];
-odds([])      -> [].
+odds([X, _ | T]) -> [X | odds(T)];
+odds([]) -> [].
 
-evens([_,X|T]) -> [X|evens(T)];
-evens([])      -> [].
+evens([_, X | T]) -> [X | evens(T)];
+evens([]) -> [].
 
-join_field_and_values([Field, Val|FieldsVals]) ->
+join_field_and_values([Field, Val | FieldsVals]) ->
     %% Append a field-value pair
     [Field, $=, $', Val, $' | join_field_and_values_1(FieldsVals)].
 
-join_field_and_values_1([Field, Val|FieldsVals]) ->
+join_field_and_values_1([Field, Val | FieldsVals]) ->
     %% Append a separater and a field-value pair
     [$,, $ , Field, $=, $', Val, $' | join_field_and_values_1(FieldsVals)];
 join_field_and_values_1([]) ->
@@ -268,7 +268,7 @@ set_password_t(LServer, Username, {Pass, PassDetails}) ->
       fun() ->
               update_t(<<"users">>, [<<"password">>, <<"pass_details">>],
                        [Pass, PassDetails],
-                       [<<"username='">>, Username ,<<"'">>])
+                       [<<"username='">>, Username, <<"'">>])
       end);
 set_password_t(LServer, Username, Pass) ->
     ejabberd_odbc:sql_transaction(
@@ -276,7 +276,7 @@ set_password_t(LServer, Username, Pass) ->
       fun() ->
               update_t(<<"users">>, [<<"username">>, <<"password">>],
                        [Username, Pass],
-                       [<<"username='">>, Username ,<<"'">>])
+                       [<<"username='">>, Username, <<"'">>])
       end).
 
 add_user(LServer, Username, {Pass, PassDetails}) ->
@@ -290,22 +290,22 @@ add_user(LServer, Username, Pass) ->
       [<<"insert into users(username, password) "
          "values ('">>, Username, <<"', '">>, Pass, <<"');">>]).
 
-add_user( LServer, Username, Pass, LoginName, Type ) ->
+add_user(LServer, Username, Pass, LoginName, Type) ->
     Ins = case Type of
               email ->
-                  <<"insert into users(username, password, email) values ('">> ;
+                  <<"insert into users(username, password, email) values ('">>;
               cellphone ->
                   <<"insert into users(username, password, cellphone) values ('">>
           end,
     ejabberd_odbc:sql_query(
       LServer,
-      [Ins, Username, <<"', '">>, Pass,<<"', '">>, LoginName,  <<"');">>]).
+      [Ins, Username, <<"', '">>, Pass, <<"', '">>, LoginName, <<"');">>]).
 
 
 del_user(LServer, Username) ->
     ejabberd_odbc:sql_query(
       LServer,
-      [<<"delete from users where username='">>, Username ,"';"]).
+      [<<"delete from users where username='">>, Username, "';"]).
 
 del_user_return_password(_LServer, Username, Pass) ->
     P = ejabberd_odbc:sql_query_t(
@@ -323,11 +323,11 @@ list_users(LServer) ->
 
 list_users(LServer, [{from, Start}, {to, End}]) when is_integer(Start) and
                                                      is_integer(End) ->
-    list_users(LServer, [{limit, End-Start+1}, {offset, Start-1}]);
+    list_users(LServer, [{limit, End - Start + 1}, {offset, Start - 1}]);
 list_users(LServer, [{prefix, Prefix}, {from, Start}, {to, End}]) when is_list(Prefix) and
                                                                        is_integer(Start) and
                                                                        is_integer(End) ->
-    list_users(LServer, [{prefix, Prefix}, {limit, End-Start+1}, {offset, Start-1}]);
+    list_users(LServer, [{prefix, Prefix}, {limit, End - Start + 1}, {offset, Start - 1}]);
 
 list_users(LServer, [{limit, Limit}, {offset, Offset}]) when is_integer(Limit) and
                                                              is_integer(Offset) ->
@@ -410,7 +410,7 @@ get_and_del_spool_msg_t(LServer, Username) ->
                   [<<"delete from spool where username='">>, Username, "';"]),
                 Result
         end,
-    ejabberd_odbc:sql_transaction(LServer,F).
+    ejabberd_odbc:sql_transaction(LServer, F).
 
 del_spool_msg(LServer, Username) ->
     ejabberd_odbc:sql_query(
@@ -779,7 +779,7 @@ set_privacy_list(ID, RItems) ->
 del_privacy_lists(LServer, _Server, Username) ->
     ejabberd_odbc:sql_query(
       LServer,
-      [<<"delete pld.* from privacy_list_data as pld left join privacy_list as pl on pld.id = pl.id where pl.username='">>,Username,<<"';">>]),
+      [<<"delete pld.* from privacy_list_data as pld left join privacy_list as pl on pld.id = pl.id where pl.username='">>, Username, <<"';">>]),
     ejabberd_odbc:sql_query(
       LServer,
       [<<"delete from privacy_list where username='">>, Username, "';"]),
@@ -793,10 +793,10 @@ escape_character($\n) -> "\\n";
 escape_character($\t) -> "\\t";
 escape_character($\b) -> "\\b";
 escape_character($\r) -> "\\r";
-escape_character($')  -> "\\'";
-escape_character($")  -> "\\\"";
+escape_character($') -> "\\'";
+escape_character($") -> "\\\"";
 escape_character($\\) -> "\\\\";
-escape_character(C)   -> C.
+escape_character(C) -> C.
 
 %% Count number of records in a table given a where clause
 count_records_where(LServer, Table, WhereClause) ->
@@ -861,11 +861,11 @@ remove_offline_messages(LServer, SUser, SServer) ->
                                           "username = '">>, SUser, <<"'">>]).
 
 prepare_offline_message(SUser, SServer, STimeStamp, SExpire, SFrom, SPacket) ->
-    [<<"('">>,   SUser,
+    [<<"('">>, SUser,
      <<"', '">>, SServer,
-     <<"', ">>,  STimeStamp,
-     <<", ">>,   SExpire,
-     <<", '">>,  SFrom,
+     <<"', ">>, STimeStamp,
+     <<", ">>, SExpire,
+     <<", '">>, SFrom,
      <<"', '">>, SPacket,
      <<"')">>].
 
@@ -941,7 +941,7 @@ add_user(LServer, Username, Pass) ->
 del_user(LServer, Username) ->
     ejabberd_odbc:sql_query(
       LServer,
-      ["EXECUTE dbo.del_user '", Username ,"'"]).
+      ["EXECUTE dbo.del_user '", Username, "'"]).
 
 del_user_return_password(LServer, Username, Pass) ->
     ejabberd_odbc:sql_query(
@@ -968,7 +968,7 @@ users_number(LServer, _) ->
     users_number(LServer).
 
 add_spool_sql(Username, XML) ->
-    ["EXECUTE dbo.add_spool '", Username, "' , '",XML,"'"].
+    ["EXECUTE dbo.add_spool '", Username, "' , '", XML, "'"].
 
 add_spool(LServer, Queries) ->
     lists:foreach(fun(Query) ->
@@ -1176,7 +1176,7 @@ set_privacy_list(ID, RItems) ->
 del_privacy_lists(LServer, Server, Username) ->
     ejabberd_odbc:sql_query(
       LServer,
-      ["EXECUTE dbo.del_privacy_lists @Server='", Server ,"' @username='", Username, "'"]).
+      ["EXECUTE dbo.del_privacy_lists @Server='", Server, "' @username='", Username, "'"]).
 
 %% @doc Escape a character.
 %% Characters to escape.
@@ -1184,9 +1184,9 @@ escape_character($\0) -> "\\0";
 escape_character($\t) -> "\\t";
 escape_character($\b) -> "\\b";
 escape_character($\r) -> "\\r";
-escape_character($')  -> "\''";
-escape_character($")  -> "\\\"";
-escape_character(C)   -> C.
+escape_character($') -> "\''";
+escape_character($") -> "\\\"";
+escape_character(C) -> C.
 
 %% Count number of records in a table given a where clause
 count_records_where(LServer, Table, WhereClause) ->
@@ -1207,7 +1207,7 @@ set_roster_version(Username, Version) ->
       ["EXECUTE dbo.set_roster_version '", Username, "', '", Version, "'"]).
 -endif.
 
-get_jid_by_loginname( LServer, LoginName, Type ) ->
+get_jid_by_loginname(LServer, LoginName, Type) ->
     Sel = case Type of
               email ->
                   <<"select username from users where email='">>;
@@ -1221,7 +1221,7 @@ get_jid_by_loginname( LServer, LoginName, Type ) ->
 
 
 
-get_info_by_loginname( LServer, LoginName, Type ) ->
+get_info_by_loginname(LServer, LoginName, Type) ->
     Sel = case Type of
               email ->
                   <<"select username, password, active, created_at from users where email='">>;
@@ -1233,16 +1233,16 @@ get_info_by_loginname( LServer, LoginName, Type ) ->
       LServer,
       [Sel, LoginName, <<"';">>]).
 
-account_info( Username, LServer ) ->
+account_info(Username, LServer) ->
     ejabberd_odbc:sql_query(
       LServer,
       [<<"select active, created_at from users where username='">>, Username, <<"';">>]).
 
 
-activate_user( Username, LServer ) ->
+activate_user(Username, LServer) ->
     ejabberd_odbc:sql_transaction(
       LServer,
       fun() ->
-              update_t( <<"users">>, [ <<"active">> ], [ <<"true">> ], [ <<"username='">>, Username, <<"'">> ] )
-      end ),
+              update_t(<<"users">>, [<<"active">>], [<<"1">>], [<<"username='">>, Username, <<"'">>])
+      end),
     ok.

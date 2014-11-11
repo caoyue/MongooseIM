@@ -133,9 +133,9 @@ check_password(User, Server, Password, Digest, DigestGen) ->
             end
     end.
 
--spec check_password_wo_escape(User::ejabberd:user(),
-                               Server::ejabberd:server(),
-                               Password::binary()) -> boolean() | not_exists.
+-spec check_password_wo_escape(User :: ejabberd:user(),
+                               Server :: ejabberd:server(),
+                               Password :: binary()) -> boolean() | not_exists.
 check_password_wo_escape(User, Server, Password) ->
     try odbc_queries:get_password(Server, User) of
         {selected, [<<"password">>, <<"pass_details">>], [{Password, null}]} ->
@@ -218,26 +218,30 @@ try_register(User, Server, Password, Loginname, Type) ->
             {error, invalid_password};
         Pass ->
             LServer = jlib:nameprep(Server),
+            %% sharp 2014-11-11.
+            %% modify standard vcard format about 'EMAIL' and 'TEL' element.
+            %% assume one 'TEL' in vcard data.
+            %% keep 'NUMBER' in 'TEL' and 'USERID' in 'EMAIL', ignore other subelement.
             El = case Type of
                      email ->
-                         { xmlel, <<"EMAIL">>, [], [ {xmlel, <<"USERID">>, [], [ {xmlcdata, Loginname } ]  } ] };
+                         {xmlel, <<"EMAIL">>, [], [{xmlel, <<"USERID">>, [], [{xmlcdata, Loginname}]}]};
                      cellphone ->
-                         { xmlel, <<"TEL">>, [], [ {}, {xmlel, <<"NUMBER">>, [], [ {xmlcdata, Loginname } ]  } ] }
+                         {xmlel, <<"TEL">>, [], [{xmlel, <<"NUMBER">>, [], [{xmlcdata, Loginname}]}]}
                  end,
-            VCardXml = {xmlel,<<"vCard">>,
-                        [ {<<"xmlns">>,?NS_VCARD} ],
-                        [ {xmlel, <<"NICKNAME">>, [], [{xmlcdata, Loginname}] }, El]},
+            VCardXml = {xmlel, <<"vCard">>,
+                        [{<<"xmlns">>, ?NS_VCARD}],
+                        [{xmlel, <<"NICKNAME">>, [], [{xmlcdata, Loginname}]}, El]},
             F = fun() ->
                         case catch odbc_queries:add_user(LServer, Username, Pass, Loginname, Type) of
                             {updated, 1} ->
-                                {ok, VCardSearch} = mod_vcard:prepare_vcard_search_params( User, LServer, VCardXml),
-                                mod_vcard_odbc:set_vcard_with_no_transaction( User, LServer, VCardXml, VCardSearch),
+                                {ok, VCardSearch} = mod_vcard:prepare_vcard_search_params(User, LServer, VCardXml),
+                                mod_vcard_odbc:set_vcard_with_no_transaction(User, LServer, VCardXml, VCardSearch),
                                 ok;
                             _ ->
                                 exists
                         end end,
-            case ejabberd_odbc:sql_transaction( LServer, F ) of
-                { atomic, ok } ->
+            case ejabberd_odbc:sql_transaction(LServer, F) of
+                {atomic, ok} ->
                     ejabberd_hooks:run(vcard_set, LServer, [User, LServer, VCardXml]),
                     {atomic, ok};
                 _ ->
@@ -303,12 +307,12 @@ get_vh_registered_users_number(Server, Opts) ->
             0
     end.
 
--spec get_jid_by_loginname( LoginName :: binary(),
-                            Server :: ejabberd:server(),
-                            Opts :: list()) -> binary() | error.
-get_jid_by_loginname( LoginName, Server, Type ) ->
-    LServer = jlib:nameprep( Server ),
-    case catch odbc_queries:get_jid_by_loginname( LServer, LoginName, Type ) of
+-spec get_jid_by_loginname(LoginName :: binary(),
+                           Server :: ejabberd:server(),
+                           Opts :: list()) -> binary() | error.
+get_jid_by_loginname(LoginName, Server, Type) ->
+    LServer = jlib:nameprep(Server),
+    case catch odbc_queries:get_jid_by_loginname(LServer, LoginName, Type) of
         {selected, [<<"username">>], [{UserName}]} ->
             UserName;
         _ ->
@@ -316,31 +320,40 @@ get_jid_by_loginname( LoginName, Server, Type ) ->
     end.
 
 
--spec get_info_by_loginname( LoginName :: binary(),
-                             Server :: ejabberd:server(),
-                             Opts :: list()) -> tuple() | error.
-get_info_by_loginname( LoginName, Server, Type ) ->
-    LServer = jlib:nameprep( Server ),
-    case catch odbc_queries:get_info_by_loginname( LServer, LoginName, Type ) of
+-spec get_info_by_loginname(LoginName :: binary(),
+                            Server :: ejabberd:server(),
+                            Opts :: list()) -> tuple() | error.
+get_info_by_loginname(LoginName, Server, Type) ->
+    LServer = jlib:nameprep(Server),
+    case catch odbc_queries:get_info_by_loginname(LServer, LoginName, Type) of
         {selected, [<<"username">>, <<"password">>, <<"active">>, <<"created_at">>], [{UserName, Password, Active, TimeStamp}]} ->
-            {UserName, Password, Active, TimeStamp};
+            StrActive = case Active of
+                            <<"1">> -> <<"true">>;
+                            _ -> <<"false">>
+                        end,
+            {UserName, Password, StrActive, TimeStamp};
         _ ->
             error %% Account does not exist
     end.
 
 %% Note: be sure User is exist.
 -spec account_info(User :: ejabberd:user(),
-                   Server :: ejabberd:server()) -> { binary(), binary() } | error .
-account_info( User, Server ) ->
+                   Server :: ejabberd:server()) -> {binary(), binary()} | error.
+account_info(User, Server) ->
     case jlib:nodeprep(User) of
         error ->
             false;
         LUser ->
             Username = ejabberd_odbc:escape(LUser),
             LServer = jlib:nameprep(Server),
-            case catch odbc_queries:account_info( Username, LServer ) of
-                {selected, [<<"active">>, <<"created_at">>], [ {Active, TimeStamp} ]} ->
-                    { Active, TimeStamp };
+            case catch odbc_queries:account_info(Username, LServer) of
+                {selected, [<<"active">>, <<"created_at">>], [{Active, TimeStamp}]} ->
+                    case Active of
+                        <<"1">> ->
+                            {<<"true">>, TimeStamp};
+                        _ ->
+                            {<<"false">>, TimeStamp}
+                    end;
                 _ ->
                     error
             end
@@ -348,15 +361,15 @@ account_info( User, Server ) ->
 
 %% Note: be sure User is exist.
 -spec activate_user(User :: ejabberd:user(),
-                    Server :: ejabberd:server()) -> ok | failed .
-activate_user( User, Server ) ->
+                    Server :: ejabberd:server()) -> ok | failed.
+activate_user(User, Server) ->
     case jlib:nodeprep(User) of
         error ->
             false;
         LUser ->
             Username = ejabberd_odbc:escape(LUser),
             LServer = jlib:nameprep(Server),
-            case catch odbc_queries:activate_user( Username, LServer ) of
+            case catch odbc_queries:activate_user(Username, LServer) of
                 ok ->
                     ok;
                 _ ->
@@ -364,15 +377,14 @@ activate_user( User, Server ) ->
             end
     end.
 
-phonelist_search( PhoneList, LServer ) ->
-    lists:foldl( fun( E, R ) ->
-                         case catch  ejabberd_odbc:sql_query( LServer,
-                                                              [<<"select username from users where cellphone='">>, E, <<"';">>]) of
-                             {selected, [<<"username">>], [ {UserName} ]} ->
-                                 [ { E, UserName } | R ];
-                             _ ->
-                                 R
-                         end end, [], PhoneList ).
+phonelist_search(PhoneList, LServer) ->
+    lists:foldl(fun(E, R) ->
+                        case catch ejabberd_odbc:sql_query(LServer, [<<"select username from users where cellphone='">>, E, <<"';">>]) of
+                            {selected, [<<"username">>], [{UserName}]} ->
+                                [{E, UserName} | R];
+                            _ ->
+                                R
+                        end end, [], PhoneList).
 
 
 

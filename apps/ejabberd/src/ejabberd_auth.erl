@@ -57,7 +57,7 @@
          entropy/1,
          get_jid_by_loginname/2,
          get_info_by_loginname/2,
-         is_loginname_exist/2,
+         loginname_exist/2,
          account_info/2,
          activate_user/2
         ]).
@@ -123,7 +123,7 @@ store_type(Server) ->
 %% @doc Check if the user and password can login in server.
 -spec check_password(User :: ejabberd:user(),
                      Server :: ejabberd:server(),
-                     Password :: binary() ) -> boolean().
+                     Password :: binary()) -> boolean().
 check_password(User, Server, Password) ->
     case check_password_with_authmodule(User, Server, Password) of
         {true, _AuthModule} -> true;
@@ -164,7 +164,7 @@ check_password_with_authmodule(User, Server, Password, Digest, DigestGen) ->
                                                Digest, DigestGen]).
 
 -spec check_password_loop(AuthModules :: [authmodule()],
-                          Args :: [any(),...]
+                          Args :: [any(), ...]
                                   ) -> 'false' | {'true', authmodule()}.
 check_password_loop([], _Args) ->
     false;
@@ -213,7 +213,7 @@ try_register(_User, _Server, "") ->
     %% We do not allow empty password
     {error, not_allowed};
 try_register(User, Server, Password) ->
-    case is_user_exists(User,Server) of
+    case is_user_exists(User, Server) of
         true ->
             {atomic, exists};
         false ->
@@ -238,8 +238,8 @@ try_register(User, Server, Password) ->
     end.
 
 %% register by email or phone number.
-%% User: email or phone number.
-try_register( User, Server, Password, Loginname, Type ) ->
+%% Loginname: email or phone number.
+try_register(User, Server, Password, Loginname, Type) ->
     %% has check Loginname uniqueness in mod_register.
     case lists:member(jlib:nameprep(Server), ?MYHOSTS) of
         true ->
@@ -324,32 +324,32 @@ get_vh_registered_users_number(Server, Opts) ->
         end, auth_modules(Server))).
 
 
-is_loginname_exist( LoginName, Server ) ->
-    case get_jid_by_loginname( LoginName, Server ) of
+loginname_exist(LoginName, Server) ->
+    case get_jid_by_loginname(LoginName, Server) of
         error -> false;
         _ -> true
     end.
 
 %% Get jid by loginname. loginname is cellphone or email.
--spec get_jid_by_loginname( LoginName :: binary(),
-                            Server :: binary ) -> error | binary().
-get_jid_by_loginname( LoginName, Server ) ->
-    Type = case binary:match( LoginName, [<<"@">>] ) of
-            nomatch -> cellphone;
-            _ -> email
-           end,
-
-    ejabberd_auth_odbc:get_jid_by_loginname( LoginName, Server, Type ).
-
-%% Get info by loginname. loginname is cellphone or email.
--spec get_info_by_loginname( LoginName :: binary(),
-                             Server :: binary ) -> error | binary().
-get_info_by_loginname( LoginName, Server ) ->
-    Type = case binary:match( LoginName, [<<"@">>] ) of
+-spec get_jid_by_loginname(LoginName :: binary(),
+                           Server :: binary) -> error | binary().
+get_jid_by_loginname(LoginName, Server) ->
+    Type = case binary:match(LoginName, [<<"@">>]) of
                nomatch -> cellphone;
                _ -> email
            end,
-    ejabberd_auth_odbc:get_info_by_loginname( LoginName, Server, Type ).
+
+    ejabberd_auth_odbc:get_jid_by_loginname(LoginName, Server, Type).
+
+%% Get info by loginname. loginname is cellphone or email.
+-spec get_info_by_loginname(LoginName :: binary(),
+                            Server :: binary) -> error | binary().
+get_info_by_loginname(LoginName, Server) ->
+    Type = case binary:match(LoginName, [<<"@">>]) of
+               nomatch -> cellphone;
+               _ -> email
+           end,
+    ejabberd_auth_odbc:get_info_by_loginname(LoginName, Server, Type).
 
 
 %% @doc Get the password of the user.
@@ -378,7 +378,7 @@ get_password_s(User, Server) ->
 %% @doc Get the password of the user and the auth module.
 -spec get_password_with_authmodule(User :: ejabberd:user(),
                                    Server :: ejabberd:server())
-                                  -> {Password::binary(), AuthModule :: authmodule()} | {'false', 'none'}.
+                                  -> {Password :: binary(), AuthModule :: authmodule()} | {'false', 'none'}.
 get_password_with_authmodule(User, Server) ->
     lists:foldl(
       fun(M, {false, _}) ->
@@ -421,7 +421,7 @@ is_user_exists_in_other_modules(Module, User, Server) ->
 
 is_user_exists_in_other_modules_loop([], _User, _Server) ->
     false;
-is_user_exists_in_other_modules_loop([AuthModule|AuthModules], User, Server) ->
+is_user_exists_in_other_modules_loop([AuthModule | AuthModules], User, Server) ->
     case AuthModule:is_user_exists(User, Server) of
         true ->
             true;
@@ -435,19 +435,17 @@ is_user_exists_in_other_modules_loop([AuthModule|AuthModules], User, Server) ->
     end.
 
 
-
-
 %% Note: be sure User is exist.
 -spec account_info(User :: ejabberd:user(),
-                   Server :: ejabberd:server()) -> { binary(), binary() }| error.
-account_info( User, Server) ->
-    ejabberd_auth_odbc:account_info( User, Server ).
+                   Server :: ejabberd:server()) -> {binary(), binary()}| error.
+account_info(User, Server) ->
+    ejabberd_auth_odbc:account_info(User, Server).
 
 %% Note: be sure User is exist.
 -spec activate_user(User :: ejabberd:user(),
-                  Server :: ejabberd:server()) -> ok | failed .
-activate_user( User, Server ) ->
-    ejabberd_auth_odbc:activate_user( User, Server ).
+                    Server :: ejabberd:server()) -> ok | failed.
+activate_user(User, Server) ->
+    ejabberd_auth_odbc:activate_user(User, Server).
 
 %% @doc Remove user.
 %% Note: it may return ok even if there was some problem removing the user.
@@ -500,7 +498,7 @@ entropy(IOList) ->
                                     [Digit, Printable, LowLetter, HiLetter, 128]
                             end
                     end, [0, 0, 0, 0, 0], S),
-            length(S) * math:log(lists:sum(Set))/math:log(2)
+            length(S) * math:log(lists:sum(Set)) / math:log(2)
     end.
 
 %%%----------------------------------------------------------------------

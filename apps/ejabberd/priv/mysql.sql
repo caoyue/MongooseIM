@@ -26,7 +26,7 @@ CREATE TABLE users (
     email varchar(250),
     cellphone varchar(50),
     token varchar(250),
-    active varchar(10) DEFAULT "true",
+    active boolean DEFAULT true,
     created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) CHARACTER SET utf8;
 

@@ -277,8 +277,10 @@ generate_guid() ->
 send_register_validation( GUID, User, Server ) ->
     UserList =  binary_to_list(User),
     case string:str(UserList, "@") > 0 of
-        false -> nothing_to_do; %% TOFIX: phone register. SMS?
-        true ->
+        false ->
+            %% TOFIX: phone register. SMS?
+            nothing_to_do;
+      true ->
             Username = jlib:nodeprep( GUID ),
             LServer = jlib:nameprep( Server ),
             BaseJID = binary_to_list( Username ) ++ "@" ++ binary_to_list( LServer ),
@@ -293,7 +295,7 @@ try_register(User, Server, Password, SourceRaw, Lang) ->
                _ -> email
            end,
 
-    case ejabberd_auth:is_loginname_exist( User, Server ) of
+    case ejabberd_auth:loginname_exist( User, Server ) of
         true -> {error, ?ERR_CONFLICT };
         false ->
             GUID = generate_guid(),
