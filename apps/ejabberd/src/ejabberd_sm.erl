@@ -610,29 +610,6 @@ is_privacy_allow(From, To, Packet, PrivacyList) ->
                 {From, To, Packet}, in]).
 
 
-%% server-to-client group messages are treated as normal messages;
-%% client-to-server group messages don't have a SubTag named "sender",
-%% the server must add it to the packet and set its value as the sender's jid,
-%% then send it to other users in this group.
-%% according to this, we can checkout which message flow it is,
-%% client-to-server or server-to-client, and give a different handler.
-is_client_to_server_groupmessage(Packet) ->
-    case xml:get_subtag(Packet, <<"info">>) of
-        false -> false;
-        InfoTag ->
-            case xml:get_tag_attr_s(<<"groupChat">>, InfoTag) of
-                <<"1">> ->
-                    case xml:get_subtag(InfoTag, <<"sender">>) of
-                        false ->
-                            InfoTag;
-                        _ ->
-                            false
-                    end;
-                _ ->
-                    false
-            end
-    end.
-
 append_sender(SenderJidBin, InfoTag) ->
     SendEl = [{xmlel, <<"sender">>, [], [{xmlcdata, SenderJidBin}]}],
     xml:append_subtags(InfoTag, SendEl).
@@ -641,79 +618,111 @@ append_sender(SenderJidBin, InfoTag) ->
                     To :: ejabberd:jid(),
                     Packet :: jlib:xmlel()) -> 'ok' | 'stop'.
 route_message(From, To, Packet) ->
+    case try_distribute_group_message(From, To, Packet) of
+        ok ->
+            ok;
+        no_group_message ->
+            do_route_message(From, To, Packet)
+    end.
+
+-spec do_route_message(From :: ejabberd:jid(),
+                       To :: ejabberd:jid(),
+                       Packet :: jlib:xmlel()) -> 'ok' | 'stop'.
+do_route_message(From, To, Packet) ->
     LUser = To#jid.luser,
     LServer = To#jid.lserver,
 
-    %% @doc groupchat message
-    %% https://github.com/ZekeLu/MongooseIM/wiki/Extending-XMPP#10-send-message-to-a-group
-    case is_client_to_server_groupmessage(Packet) of
-        false ->
-            PrioPid = get_user_present_pids(LUser, LServer),
-            case catch lists:max(PrioPid) of
-                {Priority, _} when is_integer(Priority), Priority >= 0 ->
-                    lists:foreach(
-                      %% Route messages to all priority that equals the max, if
-                      %% positive
-                      fun({Prio, Pid}) when Prio == Priority ->
+    PrioPid = get_user_present_pids(LUser, LServer),
+    case catch lists:max(PrioPid) of
+        {Priority, _} when is_integer(Priority), Priority >= 0 ->
+            lists:foreach(
+              %% Route messages to all priority that equals the max, if
+              %% positive
+              fun({Prio, Pid}) when Prio == Priority ->
                                                 % we will lose message if PID is not alive
-                              Pid ! {route, From, To, Packet};
-                         %% Ignore other priority:
-                         ({_Prio, _Pid}) ->
-                              ok
-                      end,
-                      PrioPid);
+                      Pid ! {route, From, To, Packet};
+                 %% Ignore other priority:
+                 ({_Prio, _Pid}) ->
+                      ok
+              end,
+              PrioPid);
+        _ ->
+            case xml:get_tag_attr_s(<<"type">>, Packet) of
+                <<"error">> ->
+                    ok;
+                <<"groupchat">> ->
+                    bounce_offline_message(From, To, Packet);
+                <<"headline">> ->
+                    bounce_offline_message(From, To, Packet);
                 _ ->
-                    case xml:get_tag_attr_s(<<"type">>, Packet) of
-                        <<"error">> ->
-                            ok;
-                        <<"groupchat">> ->
-                            bounce_offline_message(From, To, Packet);
-                        <<"headline">> ->
-                            bounce_offline_message(From, To, Packet);
-                        _ ->
-                            case ejabberd_auth:is_user_exists(LUser, LServer) of
+                    case ejabberd_auth:is_user_exists(LUser, LServer) of
+                        true ->
+                            case is_privacy_allow(From, To, Packet) of
                                 true ->
-                                    case is_privacy_allow(From, To, Packet) of
-                                        true ->
-                                            ejabberd_hooks:run(offline_message_hook,
-                                                               LServer,
-                                                               [From, To, Packet]);
-                                        false ->
-                                            ok
-                                    end;
-                                _ ->
-                                    Err = jlib:make_error_reply(
-                                            Packet, ?ERR_SERVICE_UNAVAILABLE),
-                                    ejabberd_router:route(To, From, Err)
-                            end
+                                    ejabberd_hooks:run(offline_message_hook,
+                                                       LServer,
+                                                       [From, To, Packet]);
+                                false ->
+                                    ok
+                            end;
+                        _ ->
+                            Err = jlib:make_error_reply(
+                                    Packet, ?ERR_SERVICE_UNAVAILABLE),
+                            ejabberd_router:route(To, From, Err)
                     end
-            end;
+            end
+    end.
+
+%% @doc groupchat message
+%% https://github.com/ZekeLu/MongooseIM/wiki/Extending-XMPP#10-send-message-to-a-group
+-spec try_distribute_group_message(From :: ejabberd:jid(),
+                                   To :: ejabberd:jid(),
+                                   Packet :: jlib:xmlel()) -> 'ok' | 'stop'.
+try_distribute_group_message(From, To, Packet) ->
+    case xml:get_subtag(Packet, <<"info">>) of
+        false -> no_group_message;
         InfoTag ->
-            GroupId = LUser,
-            SenderJidBin = jlib:jid_to_binary({From#jid.user, From#jid.server, <<>>}),
-            case odbc_groupchat:get_members_by_groupid(LServer, GroupId) of
-                {ok, MembersInfoList} ->
-                    Lang = lists:keyfind(<<"xml:lang">>, 1, Packet#xmlel.attrs),
-                    NewInfoTag = append_sender(SenderJidBin, InfoTag),
-                    lists:foreach(fun({MemberJidBin, _Nickname})
-                                        when MemberJidBin =:= SenderJidBin
-                                             ->
-                                          ok;
-                                     ({MemberJidBin, _Nickname}) ->
-                                          GroupJid = To,
-                                          GroupJidBin = jlib:jid_to_binary(GroupJid),
-                                          Attrs = [{<<"from">>, GroupJidBin},
-                                                   {<<"to">>, MemberJidBin},
-                                                   {<<"type">>, <<"chat">>},
-                                                   Lang],
-                                          ejabberd_router:route(GroupJid,
-                                                                jlib:binary_to_jid(MemberJidBin),
-                                                                Packet#xmlel{attrs = Attrs, children = [NewInfoTag]})
-                                  end,
-                                  MembersInfoList);
-                {error, _} ->
-                    Err = jlib:make_error_reply(Packet, ?ERR_SERVICE_UNAVAILABLE),
-                    ejabberd_router:route(To, From, Err)
+            case xml:get_tag_attr_s(<<"groupChat">>, InfoTag) of
+                <<"1">> ->
+                    case xml:get_subtag(InfoTag, <<"sender">>) of
+                        false ->
+                            LUser = To#jid.luser,
+                            LServer = To#jid.lserver,
+
+                            GroupId = LUser,
+                            SenderJidBin = jlib:jid_to_binary({From#jid.user, From#jid.server, <<>>}),
+                            case odbc_groupchat:get_members_by_groupid(LServer, GroupId) of
+                                {ok, MembersInfoList} ->
+                                    NewInfoTag = append_sender(SenderJidBin, InfoTag),
+                                    Children = [NewInfoTag | lists:keydelete(<<"info">>, #xmlel.name, Packet#xmlel.children)],
+
+                                    GroupJid = To,
+                                    GroupJidBin = jlib:jid_to_binary(GroupJid),
+                                    OriginalAttrs = Packet#xmlel.attrs,
+                                    TempAttrs = lists:keydelete(<<"to">>, 1, lists:keydelete(<<"from">>, 1, OriginalAttrs)),
+                                    Attrs = [{<<"from">>, GroupJidBin} | TempAttrs],
+                                    lists:foreach(fun({MemberJidBin, _Nickname}) when MemberJidBin =:= SenderJidBin ->
+                                                          ok;
+                                                     ({MemberJidBin, _Nickname}) ->
+                                                          do_route_message(GroupJid,
+                                                                           jlib:binary_to_jid(MemberJidBin),
+                                                                           Packet#xmlel{
+                                                                             attrs = [{<<"to">>, MemberJidBin} | Attrs],
+                                                                             children = Children})
+                                                  end,
+                                                  MembersInfoList),
+                                    ok;
+                                {error, _} ->
+                                    Err = jlib:make_error_reply(Packet, ?ERR_SERVICE_UNAVAILABLE),
+                                    ejabberd_router:route(To, From, Err)
+                            end;
+                        _ ->
+                            %% the client should not include the <sender/> element
+                            Err = jlib:make_error_reply(Packet, ?ERR_BAD_REQUEST),
+                            ejabberd_router:route(To, From, Err)
+                    end;
+                _ ->
+                    no_group_message
             end
     end.
 
@@ -914,5 +923,5 @@ sm_backend(Backend) ->
 -spec backend() -> atom().
 backend() ->
     ejabberd_sm_",
-      atom_to_list(Backend),
+            atom_to_list(Backend),
     ".\n"]).
