@@ -316,3 +316,23 @@ CREATE TABLE offline_message(
   packet    blob            NOT NULL
 );
 CREATE INDEX i_offline_message USING BTREE ON offline_message(server, username, id);
+
+
+-- aft mod_groupchat tables begin
+CREATE TABLE groupinfo (
+    groupid int PRIMARY KEY NOT NULL auto_increment,
+    name varchar(250) CHARACTER SET binary,
+    owner varchar(250) CHARACTER SET binary NOT NULL,
+    created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) CHARACTER SET utf8;
+
+CREATE TABLE groupuser (
+    id int PRIMARY KEY NOT NULL auto_increment,
+    groupid int NOT NULL,
+    jid varchar(250) CHARACTER SET binary NOT NULL,
+    nickname varchar(250) CHARACTER SET binary,
+    joined_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) CHARACTER SET utf8;
+CREATE INDEX group_jid_index ON groupuser (jid);
+CREATE INDEX group_id_index ON groupuser (groupid);
+-- aft mod_groupchat tables end

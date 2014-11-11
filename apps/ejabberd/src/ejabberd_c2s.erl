@@ -87,17 +87,17 @@
                 sasl_state,
                 access,
                 shaper,
-                zlib = {false, 0}          :: {boolean(), integer()},
-                tls = false           :: boolean(),
-                tls_required = false  :: boolean(),
-                tls_enabled = false   :: boolean(),
+                zlib = {false, 0} :: {boolean(), integer()},
+                tls = false :: boolean(),
+                tls_required = false :: boolean(),
+                tls_enabled = false :: boolean(),
                 tls_options = [],
                 authenticated = false :: boolean(),
-                jid                  :: ejabberd:jid(),
-                user = <<>>          :: ejabberd:user(),
-                server = ?MYNAME     :: ejabberd:server(),
-                resource = <<>>      :: ejabberd:resource(),
-                sid                  :: ejabberd_sm:sid(),
+                jid :: ejabberd:jid(),
+                user = <<>> :: ejabberd:user(),
+                server = ?MYNAME :: ejabberd:server(),
+                resource = <<>> :: ejabberd:resource(),
+                sid :: ejabberd_sm:sid(),
                 pres_t = ?SETS:new() :: gb_set(),
                 pres_f = ?SETS:new() :: gb_set(),
                 pres_a = ?SETS:new() :: gb_set(),
@@ -108,10 +108,10 @@
                 pres_invis = false :: boolean(),
                 privacy_list = #userlist{} :: mod_privacy:userlist(),
                 conn = unknown,
-                auth_module     :: ejabberd_auth:authmodule(),
-                ip              :: inet:ip_address(),
+                auth_module :: ejabberd_auth:authmodule(),
+                ip :: inet:ip_address(),
                 aux_fields = [] :: [{aux_key(), aux_value()}],
-                lang            :: ejabberd:lang(),
+                lang :: ejabberd:lang(),
                 stream_mgmt = false,
                 stream_mgmt_in = 0,
                 stream_mgmt_id,
@@ -187,7 +187,7 @@
 %%%----------------------------------------------------------------------
 
 -spec start(_, list())
-           -> {'error',_} | {'ok','undefined' | pid()} | {'ok','undefined' | pid(),_}.
+           -> {'error', _} | {'ok', 'undefined' | pid()} | {'ok', 'undefined' | pid(), _}.
 start(SockData, Opts) ->
     ?SUPERVISOR_START.
 
@@ -222,7 +222,7 @@ get_aux_field(Key, #state{aux_fields = Opts}) ->
                     State :: state()) -> state().
 set_aux_field(Key, Val, #state{aux_fields = Opts} = State) ->
     Opts1 = lists:keydelete(Key, 1, Opts),
-    State#state{aux_fields = [{Key, Val}|Opts1]}.
+    State#state{aux_fields = [{Key, Val} | Opts1]}.
 
 
 -spec del_aux_field(Key :: aux_key(), State :: state()) -> aux_value().
@@ -252,7 +252,7 @@ get_subscription(LFrom, StateData) ->
                 Type :: atom(), % guess
                 From :: ejabberd:jid(), % guess
                 Packet :: jlib:xmlel() % guess
-                ) -> {'broadcast', atom(), ejabberd:jid(), jlib:xmlel()}.
+                          ) -> {'broadcast', atom(), ejabberd:jid(), jlib:xmlel()}.
 broadcast(FsmRef, Type, From, Packet) ->
     FsmRef ! {broadcast, Type, From, Packet}.
 
@@ -315,19 +315,19 @@ init([{SockMod, Socket}, Opts]) ->
                         Socket
                 end,
             SocketMonitor = SockMod:monitor(Socket1),
-            {ok, wait_for_stream, #state{socket         = Socket1,
-                                         sockmod        = SockMod,
+            {ok, wait_for_stream, #state{socket = Socket1,
+                                         sockmod = SockMod,
                                          socket_monitor = SocketMonitor,
-                                         xml_socket     = XMLSocket,
-                                         zlib           = Zlib,
-                                         tls            = TLS,
-                                         tls_required   = StartTLSRequired,
-                                         tls_enabled    = TLSEnabled,
-                                         tls_options    = TLSOpts,
-                                         streamid       = new_id(),
-                                         access         = Access,
-                                         shaper         = Shaper,
-                                         ip             = IP},
+                                         xml_socket = XMLSocket,
+                                         zlib = Zlib,
+                                         tls = TLS,
+                                         tls_required = StartTLSRequired,
+                                         tls_enabled = TLSEnabled,
+                                         tls_options = TLSOpts,
+                                         streamid = new_id(),
+                                         access = Access,
+                                         shaper = Shaper,
+                                         ip = IP},
              ?C2S_OPEN_TIMEOUT}
     end.
 
@@ -416,7 +416,7 @@ wait_for_stream({xmlstreamstart, _Name, Attrs}, StateData) ->
                                     TLSEnabled = StateData#state.tls_enabled,
                                     TLSRequired = StateData#state.tls_required,
                                     TLSFeature =
-                                        case  (TLS == true) andalso
+                                        case (TLS == true) andalso
                                             (TLSEnabled == false) andalso
                                             (SockMod == gen_tcp) of
                                             true ->
@@ -1121,9 +1121,31 @@ session_established({xmlstreamerror, _}, StateData) ->
     send_trailer(StateData),
     {stop, normal, StateData};
 session_established(closed, StateData) ->
-    ?DEBUG("Session established closed - trying to enter resume_session",[]),
+    ?DEBUG("Session established closed - trying to enter resume_session", []),
     maybe_enter_resume_session(StateData#state.stream_mgmt_id, StateData).
 
+add_timestamp(#xmlel{children = Children} = XmlEl) ->
+    case xml:get_subtag(XmlEl, <<"info">>) of
+        false -> XmlEl;
+        InfoEl ->
+            {{Year, Month, Day}, {Hour, Minute, Second}} = calendar:universal_time(),
+            TimeStamp = list_to_binary(io_lib:format("~4..0w-~2..0w-~2..0wT~2..0w:~2..0w:~2..0wZ",
+                                                     [Year, Month, Day, Hour, Minute, Second])),
+            #xmlel{attrs = Attrs} = InfoEl,
+            NewAttrs = [{<<"timestamp">>, TimeStamp} | Attrs],
+            NewInfoEL = InfoEl#xmlel{attrs = NewAttrs},
+
+            NewChildrens = lists:foldl(fun(E, Acc0) ->
+                                               case E of
+                                                   #xmlel{name = <<"info">>} ->
+                                                       [NewInfoEL | Acc0];
+                                                   _ ->
+                                                       [E | Acc0]
+                                               end end,
+                                       [],
+                                       Children),
+            XmlEl#xmlel{children = NewChildrens}
+    end.
 
 %% @doc Process packets sent by user (coming from user on c2s XMPP
 %% connection)
@@ -1205,8 +1227,9 @@ session_established2(El, StateData) ->
                         ejabberd_hooks:run(user_send_packet,
                                            Server,
                                            [FromJID, ToJID, NewEl]),
+                        TimeEl = add_timestamp(NewEl),
                         check_privacy_route(FromJID, StateData, FromJID,
-                                            ToJID, NewEl),
+                                            ToJID, TimeEl),
                         StateData;
                     _ ->
                         StateData
@@ -1233,7 +1256,7 @@ resume_session(closed, StateData) ->
 resume_session(timeout, StateData) ->
     {next_state, resume_session, StateData, hibernate};
 resume_session(Msg, StateData) ->
-    ?WARNING_MSG("unexpected message ~p",[Msg]),
+    ?WARNING_MSG("unexpected message ~p", [Msg]),
     {next_state, resume_session, StateData, hibernate}.
 
 
@@ -1276,7 +1299,7 @@ handle_event(_Event, StateName, StateData) ->
                         StateName :: statename(),
                         State :: state())
                        -> {'reply', Reply :: [any()], statename(), state()}
-                              | {'reply', Reply :: 'ok' | {_,_,_,_}, statename(), state(), integer()}.
+                              | {'reply', Reply :: 'ok' | {_, _, _, _}, statename(), state(), integer()}.
 handle_sync_event(get_presence, _From, StateName, StateData) ->
     User = StateData#state.user,
     PresLast = StateData#state.pres_last,
@@ -1612,9 +1635,9 @@ print_state(State = #state{pres_t = T, pres_f = F, pres_a = A, pres_i = I}) ->
 %%----------------------------------------------------------------------
 -spec terminate(Reason :: any(), statename(), state()) -> ok.
 terminate(_Reason, StateName, StateData) ->
-    case  should_close_session(StateName) of
+    case should_close_session(StateName) of
         %% if we are in an state wich have a session established
-        true->
+        true ->
             case StateData#state.authenticated of
                 replaced ->
                     ?INFO_MSG("(~w) Replaced session for ~s",
@@ -1787,7 +1810,7 @@ send_trailer(StateData) ->
     send_text(StateData, ?STREAM_TRAILER).
 
 
-send_and_maybe_buffer_stanza({_, _, Stanza} = Packet, State, StateName)->
+send_and_maybe_buffer_stanza({_, _, Stanza} = Packet, State, StateName) ->
     SendResult = maybe_send_element_safe(State, Stanza),
     BufferedStateData = buffer_out_stanza(Packet, State),
     case SendResult of
@@ -1822,7 +1845,7 @@ is_auth_packet(El) ->
 
 
 -spec get_auth_tags(Els :: [jlib:xmlel()], _, _, _, _) -> {_, _, _, _}.
-get_auth_tags([#xmlel{name = Name, children = Els}| L], U, P, D, R) ->
+get_auth_tags([#xmlel{name = Name, children = Els} | L], U, P, D, R) ->
     CData = xml:get_cdata(Els),
     case Name of
         <<"username">> ->
@@ -1897,7 +1920,7 @@ process_presence_probe(From, To, StateData) ->
                         deny ->
                             ok;
                         allow ->
-                            Pid=element(2, StateData#state.sid),
+                            Pid = element(2, StateData#state.sid),
                             ejabberd_hooks:run(presence_probe_hook, StateData#state.server, [From, To, Pid]),
                             %% Don't route a presence probe to oneself
                             case jlib:are_equal_jids(From, To) of
@@ -2230,7 +2253,7 @@ remove_element(E, Set) ->
 roster_change(IJID, ISubscription, StateData) ->
     LIJID = jlib:jid_tolower(IJID),
     IsFrom = (ISubscription == both) or (ISubscription == from),
-    IsTo   = (ISubscription == both) or (ISubscription == to),
+    IsTo = (ISubscription == both) or (ISubscription == to),
     OldIsFrom = ?SETS:is_element(LIJID, StateData#state.pres_f),
     FSet = if
                IsFrom ->
@@ -2366,7 +2389,7 @@ process_privacy_iq(From, To,
 
 -spec resend_offline_messages(state()) -> ok.
 resend_offline_messages(StateData) ->
-    ?DEBUG("resend offline messages~n",[]),
+    ?DEBUG("resend offline messages~n", []),
     case ejabberd_hooks:run_fold(
            resend_offline_messages_hook, StateData#state.server,
            [],
@@ -2406,7 +2429,7 @@ resend_offline_messages(StateData) ->
 resend_subscription_requests(#state{pending_invitations = Pending} = StateData) ->
     NewState = lists:foldl(fun(XMLPacket, #state{} = State) ->
                                    send_element(State, XMLPacket),
-                                   {value, From} =  xml:get_tag_attr(<<"from">>, XMLPacket),
+                                   {value, From} = xml:get_tag_attr(<<"from">>, XMLPacket),
                                    {value, To} = xml:get_tag_attr(<<"to">>, XMLPacket),
                                    BufferedStateData = buffer_out_stanza({From, To, XMLPacket}, State),
                                    maybe_send_ack_request(BufferedStateData),
@@ -2419,7 +2442,7 @@ get_showtag(undefined) ->
     <<"unavailable">>;
 get_showtag(Presence) ->
     case xml:get_path_s(Presence, [{elem, <<"show">>}, cdata]) of
-        <<>>      -> <<"available">>;
+        <<>> -> <<"available">>;
         ShowTag -> ShowTag
     end.
 
@@ -2518,7 +2541,7 @@ fsm_reply(Reply, StateName, StateData) ->
                        ) -> boolean().
 is_ip_blacklisted(undefined) ->
     false;
-is_ip_blacklisted({IP,_Port}) ->
+is_ip_blacklisted({IP, _Port}) ->
     ejabberd_hooks:run_fold(check_bl_c2s, false, [IP]).
 
 
@@ -2582,7 +2605,7 @@ flush_messages() ->
 flush_messages(N, Acc) ->
     receive
         {route, _, _, _} = Msg ->
-            flush_messages(N+1, [Msg | Acc])
+            flush_messages(N + 1, [Msg | Acc])
     after 0 ->
             {N, Acc}
     end.
@@ -2591,7 +2614,7 @@ flush_messages(N, Acc) ->
 %%% XEP-0191
 %%%----------------------------------------------------------------------
 
--spec route_blocking(What :: 'unblock_all' | {'block',[any()]} | {'unblock',[any()]},
+-spec route_blocking(What :: 'unblock_all' | {'block', [any()]} | {'unblock', [any()]},
                      State :: state()) -> 'ok'.
 route_blocking(What, StateData) ->
     SubEl =
@@ -2640,10 +2663,10 @@ route_blocking(What, StateData) ->
 %% @doc Try to reduce the heap footprint of the four presence sets
 %% by ensuring that we re-use strings and Jids wherever possible.
 -spec pack(S :: state()) -> state().
-pack(S = #state{pres_a=A,
-                pres_i=I,
-                pres_f=F,
-                pres_t=T}) ->
+pack(S = #state{pres_a = A,
+                pres_i = I,
+                pres_f = F,
+                pres_t = T}) ->
     {NewA, Pack1} = pack_jid_set(A, gb_trees:empty()),
     {NewI, Pack2} = pack_jid_set(I, Pack1),
     {NewF, Pack3} = pack_jid_set(F, Pack2),
@@ -2651,22 +2674,22 @@ pack(S = #state{pres_a=A,
     %% Throw away Pack4 so that if we delete references to
     %% Strings or Jids in any of the sets there will be
     %% no live references for the GC to find.
-    S#state{pres_a=NewA,
-            pres_i=NewI,
-            pres_f=NewF,
-            pres_t=NewT}.
+    S#state{pres_a = NewA,
+            pres_i = NewI,
+            pres_f = NewF,
+            pres_t = NewT}.
 
 
--spec pack_jid_set(Set :: gb_set(), Pack :: gb_tree()) -> {gb_set(),gb_tree()}.
+-spec pack_jid_set(Set :: gb_set(), Pack :: gb_tree()) -> {gb_set(), gb_tree()}.
 pack_jid_set(Set, Pack) ->
     Jids = ?SETS:to_list(Set),
     {PackedJids, NewPack} = pack_jids(Jids, Pack, []),
     {?SETS:from_list(PackedJids), NewPack}.
 
 
--spec pack_jids([{_,_,_}], Pack :: gb_tree(), Acc :: [any()]) -> {[any()],gb_tree()}.
+-spec pack_jids([{_, _, _}], Pack :: gb_tree(), Acc :: [any()]) -> {[any()], gb_tree()}.
 pack_jids([], Pack, Acc) -> {Acc, Pack};
-pack_jids([{U,S,R}=Jid | Jids], Pack, Acc) ->
+pack_jids([{U, S, R} = Jid | Jids], Pack, Acc) ->
     case gb_trees:lookup(Jid, Pack) of
         {value, PackedJid} ->
             pack_jids(Jids, Pack, [PackedJid | Acc]);
@@ -2845,7 +2868,7 @@ buffer_out_stanza(Packet, #state{stream_mgmt_buffer = Buffer,
     NPacket = maybe_add_timestamp(Packet, Timestamp),
 
     NS = case is_buffer_full(NewSize, BufferMax) of
-             true->
+             true ->
                  defer_resource_constraint_check(S);
              _ ->
                  S
@@ -2873,7 +2896,7 @@ drop_last(N, List) ->
     {ToDrop, List2} = lists:foldr(fun(E, {0, Acc}) ->
                                           {0, [E | Acc]};
                                      (_, {ToDrop, Acc}) ->
-                                          {ToDrop-1, Acc}
+                                          {ToDrop - 1, Acc}
                                   end, {N, []}, List),
     {N - ToDrop, List2}.
 
@@ -2964,12 +2987,12 @@ do_resume_session(SMID, El, [{_, Pid}], StateData) ->
                                                   NSD#state.stream_mgmt_in),
                     send_element(NSD, Resumed),
                     [send_element(NSD, Packet)
-                     || {_, _,Packet} <- lists:reverse(NSD#state.stream_mgmt_buffer)],
+                     || {_, _, Packet} <- lists:reverse(NSD#state.stream_mgmt_buffer)],
                     fsm_next_state(session_established, NSD)
                 catch
                     %% errors from send_element
                     _:_ ->
-                        ?INFO_MSG("resumption error while resending old stanzas entering resume state again smid: ~p~n",[SMID]),
+                        ?INFO_MSG("resumption error while resending old stanzas entering resume state again smid: ~p~n", [SMID]),
                         maybe_enter_resume_session(SMID, NSD)
                 end
         end
@@ -3035,7 +3058,7 @@ handover_session(SD) ->
                    stream_mgmt_buffer = NewBuffer},
     {stop, normal, {ok, NSD}, NSD}.
 
-maybe_add_timestamp({F, T, #xmlel{name= <<"message">>}=Packet}=PacketTuple, Timestamp) ->
+maybe_add_timestamp({F, T, #xmlel{name = <<"message">>} = Packet} = PacketTuple, Timestamp) ->
     Type = xml:get_tag_attr_s(<<"type">>, Packet),
     case Type of
         <<"error">> ->
@@ -3043,16 +3066,16 @@ maybe_add_timestamp({F, T, #xmlel{name= <<"message">>}=Packet}=PacketTuple, Time
         <<"headline">> ->
             PacketTuple;
         _ ->
-            {F, T, add_timestamp(Timestamp,<<"localhost">>, Packet)}
+            {F, T, add_timestamp(Timestamp, <<"localhost">>, Packet)}
     end;
 maybe_add_timestamp(Packet, _Timestamp) ->
     Packet.
 
 add_timestamp(undefined, _Server, Packet) ->
     Packet;
-add_timestamp({_,_,Micro} = TimeStamp, Server, Packet) ->
-    {D,{H,M,S}} = calendar:now_to_universal_time(TimeStamp),
-    Time = {D,{H,M,S, Micro}},
+add_timestamp({_, _, Micro} = TimeStamp, Server, Packet) ->
+    {D, {H, M, S}} = calendar:now_to_universal_time(TimeStamp),
+    Time = {D, {H, M, S, Micro}},
     case xml:get_subtag(Packet, <<"delay">>) of
         false ->
             %% TODO: Delete the next element once XEP-0091 is Obsolete
@@ -3067,11 +3090,11 @@ timestamp_legacy_xml(Server, Time) ->
     FromJID = jlib:make_jid(<<>>, Server, <<>>),
     jlib:timestamp_to_xml(Time, utc, FromJID, <<"SM Storage">>).
 
-defer_resource_constraint_check(#state{stream_mgmt_constraint_check_tref = undefined} = State)->
+defer_resource_constraint_check(#state{stream_mgmt_constraint_check_tref = undefined} = State) ->
     Seconds = timer:seconds(?CONSTRAINT_CHECK_TIMEOUT),
     TRef = erlang:send_after(Seconds, self(), check_buffer_full),
     State#state{stream_mgmt_constraint_check_tref = TRef};
-defer_resource_constraint_check(State)->
+defer_resource_constraint_check(State) ->
     State.
 
 -ifdef(TEST).
@@ -3087,13 +3110,13 @@ defer_resource_constraint_check(State)->
 
 increment_sm_incoming_test_() ->
     [?LET(I, fun increment_sm_incoming/1,
-          [?_eq(1,        I(0)),
-           ?_eq(2,        I(1)),
-           ?_eq(3,        I(2)),
+          [?_eq(1, I(0)),
+           ?_eq(2, I(1)),
+           ?_eq(3, I(2)),
            ?_eq(10000000, I(9999999)),
-           ?_eq(0,        I(?STREAM_MGMT_H_MAX))]),
+           ?_eq(0, I(?STREAM_MGMT_H_MAX))]),
      ?LET(I, fun increment_sm_counter/2,
-          [?_eq(4,        I(?STREAM_MGMT_H_MAX, 5))])].
+          [?_eq(4, I(?STREAM_MGMT_H_MAX, 5))])].
 
 calc_to_drop_test_() ->
     C = fun calc_to_drop/2,
@@ -3104,14 +3127,14 @@ calc_to_drop_test_() ->
 
 drop_last_test_() ->
     D = fun drop_last/2,
-    [?_eq({0, []},        D(0, [])),
-     ?_eq({1, []},        D(1, [1])),
-     ?_eq({2, []},        D(2, [1, 2])),
-     ?_eq({0, [1, 2]},    D(0, [1, 2])),
-     ?_eq({0, []},        D(2, [])),
-     ?_eq({1, [1]},       D(1, [1, 2])),
+    [?_eq({0, []}, D(0, [])),
+     ?_eq({1, []}, D(1, [1])),
+     ?_eq({2, []}, D(2, [1, 2])),
+     ?_eq({0, [1, 2]}, D(0, [1, 2])),
+     ?_eq({0, []}, D(2, [])),
+     ?_eq({1, [1]}, D(1, [1, 2])),
      ?_eq({3, [1, 2, 3]}, D(3, [1, 2, 3, 4, 5, 6])),
-     ?_eq({6, []},        D(7, [1, 2, 3, 4, 5, 6]))].
+     ?_eq({6, []}, D(7, [1, 2, 3, 4, 5, 6]))].
 
 buffer_outgoing_test_() ->
     {setup, fun create_c2s/0, fun cleanup_c2s/1,
@@ -3129,14 +3152,14 @@ client_ack_test_() ->
              mk_client_ack(3)]}}.
 
 no_buffer_test_() ->
-    {setup, fun () -> c2s_initial_state(mgmt_on) end,
-     {with, [fun (State0) ->
+    {setup, fun() -> c2s_initial_state(mgmt_on) end,
+     {with, [fun(State0) ->
                      State = State0#state{stream_mgmt_buffer_max = infinity},
                      ?eq([], State#state.stream_mgmt_buffer),
                      NewState = buffer_out_stanza(fake_packet, State),
                      ?eq([fake_packet], NewState#state.stream_mgmt_buffer)
              end,
-             fun (State0) ->
+             fun(State0) ->
                      State = State0#state{stream_mgmt_buffer_max = no_buffer},
                      ?eq([], State#state.stream_mgmt_buffer),
                      NewState = buffer_out_stanza(fake_packet, State),
@@ -3149,27 +3172,27 @@ enable_stream_resumption_test_() ->
      %% to write that fun we must know this process's pid beforehand;
      %% we know self() beforehand, so run the test in the current process.
      local,
-     fun () ->
+     fun() ->
              Self = self(),
              meck:new(mod_stream_management, []),
              meck:expect(mod_stream_management, get_buffer_max,
-                         fun (_) -> 100 end),
+                         fun(_) -> 100 end),
              meck:expect(mod_stream_management, get_ack_freq,
-                         fun (_) -> 1 end),
+                         fun(_) -> 1 end),
              meck:expect(mod_stream_management, get_resume_timeout,
-                         fun (DefaultValue) -> DefaultValue end),
+                         fun(DefaultValue) -> DefaultValue end),
              meck:expect(mod_stream_management, register_smid,
-                         fun (_SMID, _SID) ->
+                         fun(_SMID, _SID) ->
                                  Self ! register_smid_called,
                                  ok
                          end),
              create_c2s(c2s_initial_state())
      end,
-     fun (C2S) ->
+     fun(C2S) ->
              cleanup_c2s(C2S),
              meck:unload(mod_stream_management)
      end,
-     {with, [fun (C2S) ->
+     {with, [fun(C2S) ->
                      Enable = #xmlel{name = <<"enable">>,
                                      attrs = [{<<"xmlns">>, ?NS_STREAM_MGNT_3},
                                               {<<"resume">>, <<"true">>}]},
@@ -3200,10 +3223,10 @@ create_c2s(State) ->
                 fun(_) ->
                         ?ERROR_MSG("socket closed too early!~n", [])
                 end),
-    meck:expect(ejabberd_socket, send, fun(_,_) -> ok end),
+    meck:expect(ejabberd_socket, send, fun(_, _) -> ok end),
     meck:new(ejabberd_hooks),
-    meck:expect(ejabberd_hooks, run, fun(_,_) -> ok end),
-    meck:expect(ejabberd_hooks, run, fun(_,_,_) -> ok end),
+    meck:expect(ejabberd_hooks, run, fun(_, _) -> ok end),
+    meck:expect(ejabberd_hooks, run, fun(_, _, _) -> ok end),
     meck:expect(ejabberd_hooks, run_fold,
                 fun(privacy_check_packet, _, _, _) -> allow end),
     F = fun() ->
@@ -3237,7 +3260,7 @@ buffer_outgoing(C2S) ->
     BufferSize = length(S1#state.stream_mgmt_buffer),
     C2S ! {route, jid(<<"asd@localhost">>), jid(<<"qwe@localhost">>), message(<<"hi">>)},
     S2 = status_to_state(sys:get_status(C2S)),
-    ?eq(BufferSize+1, length(S2#state.stream_mgmt_buffer)).
+    ?eq(BufferSize + 1, length(S2#state.stream_mgmt_buffer)).
 
 status_to_state({status, _Pid, {module, ?GEN_FSM}, Data}) ->
     [_, _, _, _, [{_, _}, {_, _}, {_, [{"StateData", State}]}]] = Data,
