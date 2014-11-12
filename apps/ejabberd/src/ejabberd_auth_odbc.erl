@@ -150,7 +150,7 @@ check_password_wo_escape(User, Server, Password) ->
                     false %% Password is not correct
             end;
         {selected, [<<"password">>, <<"pass_details">>], []} ->
-            not_exists; %% Account does not exist
+            false; %% Account does not exist
         {error, _Error} ->
             false %% Typical error is that table doesn't exist
     catch

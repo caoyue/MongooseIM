@@ -375,10 +375,6 @@ wait_for_stream({xmlstreamstart, _Name, Attrs}, StateData) ->
                                     SASLState =
                                         cyrsasl:server_new(
                                           <<"jabber">>, Server, <<>>, [],
-                                          fun(L) ->
-                                                  ejabberd_auth:get_info_by_loginname(
-                                                    L, Server )
-                                          end,
                                           fun(U) ->
                                                   ejabberd_auth:get_password_with_authmodule(
                                                     U, Server)
