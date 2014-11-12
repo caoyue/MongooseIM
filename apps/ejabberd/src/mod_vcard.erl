@@ -375,14 +375,14 @@ make_search_response(Key, JID, NickName, Photo, IQ, Type) ->
     List = [],
     List1 = case Photo of
                 nophoto -> List;
-                _ -> [{struct, [{photo, Photo}]} | List]
+                _ -> [{photo, Photo} | List]
             end,
     List2 = case NickName of
                 <<"">> -> List1;
-                _ -> [{struct, [{nickname, NickName}]} | List1]
+                _ -> [{nickname, NickName} | List1]
             end,
-    List3 = [{struct, [{jid, JID}]} | List2],
-    Result = {struct, [{Key, List3}]},
+    List3 =  [{jid, JID} | List2],
+    Result = {struct, [{Key, [{struct, List3}]}]},
     BinResult = iolist_to_binary(mochijson2:encode(Result)),
 
     IQ#iq{type = result,
