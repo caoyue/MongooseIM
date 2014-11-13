@@ -3,7 +3,7 @@
 %% API
 -export([create_group/3,
          add_members/3,
-         get_groupname_by_groupid/2,
+         get_groupinfo_by_groupid/2,
          create_and_add/4,
          get_members_by_groupid/2,
          get_groups_by_jid/2,
@@ -51,12 +51,12 @@ add_members(LServer, GroupId, MembersList) ->
             {error, Error}
     end.
 
-get_groupname_by_groupid(LServer, GroupId) ->
+get_groupinfo_by_groupid(LServer, GroupId) ->
     case ejabberd_odbc:sql_query(
            LServer,
-           ["select name from groupinfo where groupid = '", ejabberd_odbc:escape(GroupId), "';"]) of
-        {selected, [<<"name">>], [{GroupName}]} ->
-            {ok, GroupName};
+           ["select name,owner from groupinfo where groupid = '", ejabberd_odbc:escape(GroupId), "';"]) of
+        {selected, [<<"name">>, <<"owner">>], [{GroupName,GroupOwner}]} ->
+            {ok, GroupId, GroupName, GroupOwner};
         Error ->
             {error, Error}
     end.
