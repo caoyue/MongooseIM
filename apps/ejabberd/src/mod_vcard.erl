@@ -637,7 +637,7 @@ get_default_reported_fields(Lang) ->
                        ?TLFIELD(<<"text-single">>, <<"Country">>, <<"ctry">>),
                        ?TLFIELD(<<"text-single">>, <<"City">>, <<"locality">>),
                        ?TLFIELD(<<"text-single">>, <<"Email">>, <<"email">>),
-                       ?TLFIELD(<<"text-single">>, <<"tel">>, <<"ltel">>),
+                       ?TLFIELD(<<"text-single">>, <<"Telephone">>, <<"tel">>),
                        ?TLFIELD(<<"text-single">>, <<"Organization Name">>, <<"orgname">>),
                        ?TLFIELD(<<"text-single">>, <<"Organization Unit">>, <<"orgunit">>)
                       ]}.
