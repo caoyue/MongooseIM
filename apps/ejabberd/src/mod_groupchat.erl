@@ -203,36 +203,34 @@ remove_members(From, _To, #iq{sub_el = SubEl} = IQ) ->
     MembersList = mochijson2:decode(xml:get_tag_cdata(SubEl)),
     case odbc_groupchat:is_user_own_group(LServer, UserJid, GroupId) of
         true ->
-            case odbc_groupchat:remove_members(LServer, GroupId, MembersList) of
-                {ok, MembersInfoList} ->
-                    case odbc_groupchat:get_members_by_groupid(LServer, GroupId) of
-                        {ok, RemainMembers} ->
-                            RemainJid = [Jid || {Jid, _} <- RemainMembers],
-                            push_groupmember(GroupId, <<>>, LServer, RemainJid ++ MembersList, MembersInfoList, <<"remove">>);
-                        _ ->
-                            push_groupmember(GroupId, <<>>, LServer, MembersList, MembersInfoList, <<"remove">>)
-                    end,
-                    IQ#iq{type = result, sub_el = [SubEl]};
-                _ ->
-                    IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
-            end;
+            do_remove_members(IQ, LServer, GroupId, MembersList);
         _ ->
             case odbc_groupchat:is_user_in_group(LServer, UserJid, GroupId) of
                 true ->
                     case MembersList of
                         [UserJid] ->
-                            case odbc_groupchat:remove_members(LServer, GroupId, MembersList) of
-                                ok ->
-                                    IQ#iq{type = result, sub_el = [SubEl]};
-                                _ ->
-                                    IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
-                            end;
+                            do_remove_members(IQ, LServer, GroupId, MembersList);
                         _ ->
                             IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
                     end;
                 _ ->
                     IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
             end
+    end.
+
+do_remove_members(#iq{sub_el = SubEl} = IQ, LServer, GroupId, MembersList) ->
+    case odbc_groupchat:remove_members(LServer, GroupId, MembersList) of
+        {ok, MembersInfoList} ->
+            case odbc_groupchat:get_members_by_groupid(LServer, GroupId) of
+                {ok, RemainMembers} ->
+                    RemainJid = [Jid || {Jid, _} <- RemainMembers],
+                    push_groupmember(GroupId, <<>>, LServer, RemainJid ++ MembersList, MembersInfoList, <<"remove">>);
+                _ ->
+                    push_groupmember(GroupId, <<>>, LServer, MembersList, MembersInfoList, <<"remove">>)
+            end,
+            IQ#iq{type = result, sub_el = [SubEl]};
+        _ ->
+            IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
     end.
 
 %% @doc dismiss group, must be owner of the group
