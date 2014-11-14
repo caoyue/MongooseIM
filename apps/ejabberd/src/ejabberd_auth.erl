@@ -39,7 +39,7 @@
          check_password_with_authmodule/3,
          check_password_with_authmodule/5,
          try_register/3,
-         try_register/5,
+         try_register_with_phone_or_email/6,
          dirty_get_registered_users/0,
          get_vh_registered_users/1,
          get_vh_registered_users/2,
@@ -59,7 +59,8 @@
          get_info_by_loginname/2,
          loginname_exists/2,
          account_info/2,
-         activate_user/2
+         activate_user/2,
+         check_phone_and_email/3
         ]).
 
 -export([check_digest/4]).
@@ -238,16 +239,10 @@ try_register(User, Server, Password) ->
     end.
 
 %% register by email or phone number.
-%% Loginname: email or phone number.
-try_register(User, Server, Password, Loginname, Type) ->
-    %% has check Loginname uniqueness in mod_register.
+try_register_with_phone_or_email(User, Server, Password, Phone, Email, Nick) ->
     case lists:member(jlib:nameprep(Server), ?MYHOSTS) of
         true ->
-            Res = lists:foldl(fun(_M, {atomic, ok} = Res) -> Res;
-                                 (M, _) ->
-                                      M:try_register(User, Server, Password, Loginname, Type)
-                              end,
-                              {error, not_allowed}, auth_modules(Server)),
+            Res = ejabberd_auth_odbc:try_register(User, Server, Password, Phone, Email, Nick),
             case Res of
                 {atomic, ok} ->
                     ejabberd_hooks:run(register_user, Server, [User, Server]),
@@ -323,6 +318,9 @@ get_vh_registered_users_number(Server, Opts) ->
                 end
         end, auth_modules(Server))).
 
+
+check_phone_and_email(Phone, Email, Server) ->
+    true.
 
 loginname_exists(LoginName, Server) ->
     case get_jid_by_loginname(LoginName, Server) of

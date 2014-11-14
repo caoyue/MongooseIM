@@ -32,6 +32,7 @@
 -define(NS_AUTH,         <<"jabber:iq:auth">>).
 -define(NS_AUTH_ERROR,   <<"jabber:iq:auth:error">>).
 -define(NS_REGISTER,     <<"jabber:iq:register">>).
+-define(NS_AFT_REGISTER, <<"aft:register">>).
 -define(NS_SEARCH,       <<"jabber:iq:search">>).
 -define(NS_ROSTER,       <<"jabber:iq:roster">>).
 -define(NS_ROSTER_VER,   <<"urn:xmpp:features:rosterver">>).
@@ -91,6 +92,7 @@
 
 -define(NS_FEATURE_IQAUTH, <<"http://jabber.org/features/iq-auth">>).
 -define(NS_FEATURE_IQREGISTER, <<"http://jabber.org/features/iq-register">>).
+-define(NS_AFT_FEATURE_IQREGISTER, <<"aft/features/iq-register">>).
 -define(NS_FEATURE_COMPRESS,<<"http://jabber.org/features/compress">>).
 -define(NS_FEATURE_MSGOFFLINE,<<"msgoffline">>).
 

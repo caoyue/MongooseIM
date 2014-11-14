@@ -37,7 +37,7 @@
          check_password/3,
          check_password/5,
          try_register/3,
-         try_register/5,
+         try_register/6,
          dirty_get_registered_users/0,
          get_vh_registered_users/1,
          get_vh_registered_users/2,
@@ -210,7 +210,7 @@ try_register(User, Server, Password) ->
     end.
 
 
-try_register(User, Server, Password, Loginname, Type) ->
+try_register(User, Server, Password, Phone, Email, Nick) ->
 
     Username = ejabberd_odbc:escape(User),
     case prepare_password(Server, Password) of
@@ -218,21 +218,17 @@ try_register(User, Server, Password, Loginname, Type) ->
             {error, invalid_password};
         Pass ->
             LServer = jlib:nameprep(Server),
-            %% sharp 2014-11-11.
             %% modify standard vcard format about 'EMAIL' and 'TEL' element.
             %% assume one 'TEL' in vcard data.
             %% keep 'NUMBER' in 'TEL' and 'USERID' in 'EMAIL', ignore other subelement.
-            El = case Type of
-                     email ->
-                         {xmlel, <<"EMAIL">>, [], [{xmlel, <<"USERID">>, [], [{xmlcdata, Loginname}]}]};
-                     cellphone ->
-                         {xmlel, <<"TEL">>, [], [{xmlel, <<"NUMBER">>, [], [{xmlcdata, Loginname}]}]}
-                 end,
+            Elements = [{xmlel, TagName, [], [{xmlel, SubTagName, [], [{xmlcdata, Data}]}]}
+                        || {TagName, SubTagName, Data}
+                               <- [{<<"EMAIL">>, <<"USERID">>, Email}, {<<"TEL">>, <<"NUMBER">>, Phone}], Data /= <<>>],
             VCardXml = {xmlel, <<"vCard">>,
                         [{<<"xmlns">>, ?NS_VCARD}],
-                        [{xmlel, <<"NICKNAME">>, [], [{xmlcdata, Loginname}]}, El]},
+                        [{xmlel, <<"NICKNAME">>, [], [{xmlcdata, Nick}]} | Elements]},
             F = fun() ->
-                        case catch odbc_queries:add_user(LServer, Username, Pass, Loginname, Type) of
+                        case catch odbc_queries:add_user(LServer, Username, Pass, Phone, Email) of
                             {updated, 1} ->
                                 {ok, VCardSearch} = mod_vcard:prepare_vcard_search_params(User, LServer, VCardXml),
                                 mod_vcard_odbc:set_vcard_with_no_transaction(User, LServer, VCardXml, VCardSearch),
