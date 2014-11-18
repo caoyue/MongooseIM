@@ -256,11 +256,16 @@ del_last(LServer, Username) ->
       LServer,
       [<<"delete from last where username='">>, Username, "'"]).
 
-get_password(LServer, Username) ->
+get_password(LServer, User) ->
+    {Field, Value} = case User of
+                         {phone, Phone} -> {<<"cellphone">>, Phone};
+                         {email, Email} -> {<<"email">>, Email};
+                         Username -> {<<"username">>, Username}
+                     end,
     ejabberd_odbc:sql_query(
       LServer,
-      [<<"select password, pass_details from users "
-         "where username='">>, Username, <<"';">>]).
+      [<<"select username, password, pass_details from users where active=1 and ">>,
+          Field, <<"='">>, Value, <<"';">>]).
 
 set_password_t(LServer, Username, {Pass, PassDetails}) ->
     ejabberd_odbc:sql_transaction(

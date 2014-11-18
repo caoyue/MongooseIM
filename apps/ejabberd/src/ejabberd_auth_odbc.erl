@@ -113,9 +113,9 @@ check_password(User, Server, Password, Digest, DigestGen) ->
             LServer = jlib:nameprep(Server),
             try odbc_queries:get_password(LServer, Username) of
                 %% Account exists, check if password is valid
-                {selected, [<<"password">>, <<"pass_details">>], [{Passwd, null}]} ->
+                {selected, [<<"username">>, <<"password">>, <<"pass_details">>], [{_, Passwd, null}]} ->
                     ejabberd_auth:check_digest(Digest, DigestGen, Password, Passwd);
-                {selected, [<<"password">>, <<"pass_details">>], [{_Passwd, PassDetails}]} ->
+                {selected, [<<"username">>, <<"password">>, <<"pass_details">>], [{_, _Passwd, PassDetails}]} ->
                     case scram:deserialize(PassDetails) of
                         #scram{storedkey = StoredKey} ->
                             Passwd = base64:decode(StoredKey),
@@ -123,7 +123,7 @@ check_password(User, Server, Password, Digest, DigestGen) ->
                         _ ->
                             false
                     end;
-                {selected, [<<"password">>, <<"pass_details">>], []} ->
+                {selected, [<<"username">>, <<"password">>, <<"pass_details">>], []} ->
                     false; %% Account does not exist
                 {error, _Error} ->
                     false %% Typical error is that table doesn't exist
@@ -138,18 +138,18 @@ check_password(User, Server, Password, Digest, DigestGen) ->
                                Password :: binary()) -> boolean() | not_exists.
 check_password_wo_escape(User, Server, Password) ->
     try odbc_queries:get_password(Server, User) of
-        {selected, [<<"password">>, <<"pass_details">>], [{Password, null}]} ->
+        {selected, [<<"username">>, <<"password">>, <<"pass_details">>], [{_, Password, null}]} ->
             Password /= <<"">>; %% Password is correct, and not empty
-        {selected, [<<"password">>, <<"pass_details">>], [{_Password2, null}]} ->
+        {selected, [<<"username">>, <<"password">>, <<"pass_details">>], [{_, _Password2, null}]} ->
             false;
-        {selected, [<<"password">>, <<"pass_details">>], [{_Password2, PassDetails}]} ->
+        {selected, [<<"username">>, <<"password">>, <<"pass_details">>], [{_, _Password2, PassDetails}]} ->
             case scram:deserialize(PassDetails) of
                 #scram{} = Scram ->
                     scram:check_password(Password, Scram);
                 _ ->
                     false %% Password is not correct
             end;
-        {selected, [<<"password">>, <<"pass_details">>], []} ->
+        {selected, [<<"username">>, <<"password">>, <<"pass_details">>], []} ->
             false; %% Account does not exist
         {error, _Error} ->
             false %% Typical error is that table doesn't exist
@@ -384,31 +384,43 @@ phonelist_search(PhoneList, LServer) ->
 
 
 
--spec get_password(User :: ejabberd:user(),
-                   Server :: ejabberd:server()) -> binary() | false.
+-spec get_password(User :: ejabberd:user() | {phone, binary()} | {email, binary()},
+                   Server :: ejabberd:server()) -> binary() | {ejabberd:user(), binary()} | false.
+get_password({phone, Phone}, Server) ->
+    do_get_password({phone, ejabberd_odbc:escape(Phone)}, Server);
+get_password({email, Email}, Server) ->
+    do_get_password({email, ejabberd_odbc:escape(Email)}, Server);
 get_password(User, Server) ->
     case jlib:nodeprep(User) of
         error ->
             false;
         LUser ->
             Username = ejabberd_odbc:escape(LUser),
-            LServer = jlib:nameprep(Server),
-            case catch odbc_queries:get_password(LServer, Username) of
-                {selected, [<<"password">>, <<"pass_details">>], [{Password, null}]} ->
-                    Password; %%Plain password
-                {selected, [<<"password">>, <<"pass_details">>], [{_Password, PassDetails}]} ->
-                    case scram:deserialize(PassDetails) of
-                        #scram{} = Scram ->
-                            {base64:decode(Scram#scram.storedkey),
-                             base64:decode(Scram#scram.serverkey),
-                             base64:decode(Scram#scram.salt),
-                             Scram#scram.iterationcount};
-                        _ ->
-                            false
-                    end;
+            case do_get_password(Username, Server) of
+                false -> false;
+                {_, Password} -> Password
+            end
+    end.
+
+do_get_password(User, Server) ->
+    LServer = jlib:nameprep(Server),
+    case catch odbc_queries:get_password(LServer, User) of
+        {selected, [<<"username">>, <<"password">>, <<"pass_details">>], [{Username, Password, null}]} ->
+            {Username, Password}; %%Plain password
+        {selected, [<<"username">>, <<"password">>, <<"pass_details">>], [{Username, _Password, PassDetails}]} ->
+            case scram:deserialize(PassDetails) of
+                #scram{} = Scram ->
+                    {Username,
+                        {base64:decode(Scram#scram.storedkey),
+                            base64:decode(Scram#scram.serverkey),
+                            base64:decode(Scram#scram.salt),
+                            Scram#scram.iterationcount}
+                    };
                 _ ->
                     false
-            end
+            end;
+        _ ->
+            false
     end.
 
 
@@ -422,7 +434,7 @@ get_password_s(User, Server) ->
             Username = ejabberd_odbc:escape(LUser),
             LServer = jlib:nameprep(Server),
             case catch odbc_queries:get_password(LServer, Username) of
-                {selected, [<<"password">>, <<"pass_details">>], [{Password, _}]} ->
+                {selected, [<<"username">>, <<"password">>, <<"pass_details">>], [{_, Password, _}]} ->
                     Password;
                 _ ->
                     <<"">>
@@ -441,9 +453,9 @@ is_user_exists(User, Server) ->
             Username = ejabberd_odbc:escape(LUser),
             LServer = jlib:nameprep(Server),
             try odbc_queries:get_password(LServer, Username) of
-                {selected, [<<"password">>, <<"pass_details">>], [{_Password, _}]} ->
+                {selected, [<<"username">>, <<"password">>, <<"pass_details">>], [{_, _Password, _}]} ->
                     true; %% Account exists
-                {selected, [<<"password">>, <<"pass_details">>], []} ->
+                {selected, [<<"username">>, <<"password">>, <<"pass_details">>], []} ->
                     false; %% Account does not exist
                 {error, Error} ->
                     {error, Error} %% Typical error is that table doesn't exist

@@ -374,7 +374,7 @@ get_password_s(User, Server) ->
 
 
 %% @doc Get the password of the user and the auth module.
--spec get_password_with_authmodule(User :: ejabberd:user(),
+-spec get_password_with_authmodule(User :: ejabberd:user() | {phone, binary()} | {email, binary()},
                                    Server :: ejabberd:server())
                                   -> {Password :: binary(), AuthModule :: authmodule()} | {'false', 'none'}.
 get_password_with_authmodule(User, Server) ->

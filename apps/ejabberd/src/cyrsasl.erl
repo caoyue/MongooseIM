@@ -57,7 +57,7 @@
                      }).
 -type sasl_state() :: #sasl_state{}.
 
--type get_password_fun() :: fun((ejabberd:user()) ->
+-type get_password_fun() :: fun((ejabberd:user() | {phone, binary()} | {email, binary()}) ->
                           {binary(), ejabberd_auth:authmodule()} | {false, none}
                         ).
 -type check_password_fun() :: fun((User :: ejabberd:user(),
