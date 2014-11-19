@@ -246,7 +246,7 @@ send_register_validation(GUID, _Phone, Email, Server) when Email /= <<>> ->
     BareJID = <<GUID/binary, $@, LServer/binary>>,
     %% TOFIX: how to deploy the web server and the XMPP server?
     Href = <<"http://", LServer/binary, ":5280/verify?token=", BareJID/binary>>,
-    kissnapp_email:send_register_validate("Kissnapp Register Validation", binary_to_list(Email), binary_to_list(Href)).
+    kissnapp_email:send_validation_email(<<"Kissnapp Register Validation">>, Email, Href).
 
 
 send_welcome_message(JID) ->
