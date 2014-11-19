@@ -92,7 +92,7 @@ unauthenticated_iq_register(Acc, _Server, _IQ, _IP) ->
 %%% iq handler
 %%%===================================================================
 
-process_iq(#jid{user = User, lserver = Server} = _From,
+process_iq(#jid{user = User, lserver = Server, lresource = Resource} = _From,
            #jid{lserver = Server} = _To,
            #iq{type = set, lang = Lang1, sub_el = SubEl} = IQ) ->
     Lang = binary_to_list(Lang1),
@@ -101,8 +101,13 @@ process_iq(#jid{user = User, lserver = Server} = _From,
     PasswordTag = xml:get_subtag(SubEl, <<"password">>),
     if
         (RemoveTag /= false) and (OldPasswordTag =:= false) and (PasswordTag =:= false) ->
+            ResIQ = IQ#iq{type = result, sub_el = [SubEl]},
+            ejabberd_router:route(
+                jlib:make_jid(User, Server, Resource),
+                jlib:make_jid(User, Server, Resource),
+                jlib:iq_to_xml(ResIQ)),
             ejabberd_auth:remove_user(User, Server),
-            IQ#iq{type = result, sub_el = [SubEl]};
+            ignore;
         (RemoveTag =:= false) and (OldPasswordTag /= false) and (PasswordTag /= false) ->
             try_set_password(User, Server, xml:get_tag_cdata(OldPasswordTag),
                              xml:get_tag_cdata(PasswordTag), IQ, SubEl, Lang);
