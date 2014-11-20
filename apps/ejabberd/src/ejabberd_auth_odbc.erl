@@ -50,9 +50,6 @@
          remove_user/3,
          store_type/1,
          plain_password_required/0,
-         get_jid_by_loginname/3,
-         get_info_by_loginname/3,
-         account_info/2,
          activate_user/2,
          phonelist_search/2
         ]).
@@ -303,58 +300,6 @@ get_vh_registered_users_number(Server, Opts) ->
             0
     end.
 
--spec get_jid_by_loginname(LoginName :: binary(),
-                           Server :: ejabberd:server(),
-                           Opts :: list()) -> binary() | error.
-get_jid_by_loginname(LoginName, Server, Type) ->
-    LServer = jlib:nameprep(Server),
-    case catch odbc_queries:get_jid_by_loginname(LServer, LoginName, Type) of
-        {selected, [<<"username">>], [{UserName}]} ->
-            UserName;
-        _ ->
-            error %% Account does not exist
-    end.
-
-
--spec get_info_by_loginname(LoginName :: binary(),
-                            Server :: ejabberd:server(),
-                            Opts :: list()) -> tuple() | error.
-get_info_by_loginname(LoginName, Server, Type) ->
-    LServer = jlib:nameprep(Server),
-    case catch odbc_queries:get_info_by_loginname(LServer, LoginName, Type) of
-        {selected, [<<"username">>, <<"password">>, <<"active">>, <<"created_at">>], [{UserName, Password, Active, TimeStamp}]} ->
-            StrActive = case Active of
-                            <<"1">> -> <<"true">>;
-                            _ -> <<"false">>
-                        end,
-            {UserName, Password, StrActive, TimeStamp};
-        _ ->
-            error %% Account does not exist
-    end.
-
-%% Note: be sure User is exist.
--spec account_info(User :: ejabberd:user(),
-                   Server :: ejabberd:server()) -> {binary(), binary()} | error.
-account_info(User, Server) ->
-    case jlib:nodeprep(User) of
-        error ->
-            false;
-        LUser ->
-            Username = ejabberd_odbc:escape(LUser),
-            LServer = jlib:nameprep(Server),
-            case catch odbc_queries:account_info(Username, LServer) of
-                {selected, [<<"active">>, <<"created_at">>], [{Active, TimeStamp}]} ->
-                    case Active of
-                        <<"1">> ->
-                            {<<"true">>, TimeStamp};
-                        _ ->
-                            {<<"false">>, TimeStamp}
-                    end;
-                _ ->
-                    error
-            end
-    end.
-
 %% Note: be sure User is exist.
 -spec activate_user(User :: ejabberd:user(),
                     Server :: ejabberd:server()) -> ok | failed.
@@ -381,7 +326,6 @@ phonelist_search(PhoneList, LServer) ->
                             _ ->
                                 R
                         end end, [], PhoneList).
-
 
 
 -spec get_password(User :: ejabberd:user() | {phone, binary()} | {email, binary()},

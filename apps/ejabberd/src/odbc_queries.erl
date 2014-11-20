@@ -101,9 +101,6 @@
          remove_old_offline_messages/2,
          remove_expired_offline_messages/2,
          remove_offline_messages/3,
-         get_jid_by_loginname/3,
-         get_info_by_loginname/3,
-         account_info/2,
          activate_user/2,
          set_vcard_with_no_transaction/28]).
 
@@ -1206,38 +1203,6 @@ set_roster_version(Username, Version) ->
       LServer,
       ["EXECUTE dbo.set_roster_version '", Username, "', '", Version, "'"]).
 -endif.
-
-get_jid_by_loginname(LServer, LoginName, Type) ->
-    Sel = case Type of
-              email ->
-                  <<"select username from users where email='">>;
-              cellphone ->
-                  <<"select username from users where cellphone='">>
-          end,
-
-    ejabberd_odbc:sql_query(
-      LServer,
-      [Sel, LoginName, <<"';">>]).
-
-
-
-get_info_by_loginname(LServer, LoginName, Type) ->
-    Sel = case Type of
-              email ->
-                  <<"select username, password, active, created_at from users where email='">>;
-              cellphone ->
-                  <<"select username, password, active, created_at from users where cellphone='">>
-          end,
-
-    ejabberd_odbc:sql_query(
-      LServer,
-      [Sel, LoginName, <<"';">>]).
-
-account_info(Username, LServer) ->
-    ejabberd_odbc:sql_query(
-      LServer,
-      [<<"select active, created_at from users where username='">>, Username, <<"';">>]).
-
 
 activate_user(Username, LServer) ->
     ejabberd_odbc:sql_transaction(
