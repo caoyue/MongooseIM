@@ -292,12 +292,12 @@ add_user(LServer, Username, Pass) ->
       [<<"insert into users(username, password) "
          "values ('">>, Username, <<"', '">>, Pass, <<"');">>]).
 
+add_user(LServer, Username, {Pass, PassDetails}, Phone, Email) ->
+    Ins = <<"insert into users(username, password, pass_details, cellphone, email) values ('">>,
+    ejabberd_odbc:sql_query(LServer,
+        [Ins, Username, <<"', '">>, Pass, <<"', '">>, PassDetails, <<"', '">>, Phone, <<"', '">>, Email, <<"');">>]);
 add_user(LServer, Username, Pass, Phone, Email) ->
-    Ins = <<"insert into users(username, password, cellphone, email) values ('">>,
-    ejabberd_odbc:sql_query(
-      LServer,
-      [Ins, Username, <<"', '">>, Pass, <<"', '">>, Phone, <<"', '">>, Email, <<"');">>]).
-
+    add_user(LServer, Username, {Pass, <<>>}, Phone, Email).
 
 del_user(LServer, Username) ->
     ejabberd_odbc:sql_query(
