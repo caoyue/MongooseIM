@@ -40,9 +40,7 @@
                          module :: sasl_module(),
                          password_type :: plain | digest | scram
                         }).
--type sasl_module() :: cyrsasl_anonymous
-                     | cyrsasl_digest
-                     | cyrsasl_plain.
+-type sasl_module() :: cyrsasl_scram.
 -type mechanism() :: binary().
 -type sasl_mechanism() :: #sasl_mechanism{}.
 
@@ -89,10 +87,7 @@ start() ->
     ets:new(sasl_mechanism, [named_table,
                              public,
                              {keypos, #sasl_mechanism.mechanism}]),
-    cyrsasl_plain:start([]),
-    cyrsasl_digest:start([]),
     cyrsasl_scram:start([]),
-    cyrsasl_anonymous:start([]),
     ok.
 
 -spec register_mechanism(Mechanism :: mechanism(),
@@ -142,23 +137,22 @@ check_credentials(_State, Props) ->
 
 -spec listmech(ejabberd:server()) -> [sasl_mechanism()].
 listmech(Host) ->
-    Mechs = ets:select(sasl_mechanism,
-                       [{#sasl_mechanism{mechanism = '$1',
-                                         password_type = '$2',
-                                         _ = '_'},
-                         case catch ejabberd_auth:store_type(Host) of
-                             external ->
-                                 [{'==', '$2', plain}];
-                             scram ->
-                                 [{'/=', '$2', digest}];
-                             {'EXIT',{undef,[{Module,store_type,[]} | _]}} ->
-                                 ?WARNING_MSG("~p doesn't implement the function store_type/0", [Module]),
-                                 [];
-                             _Else ->
-                                 []
-                         end,
-                         ['$1']}]),
-    filter_anonymous(Host, Mechs).
+    ets:select(sasl_mechanism,
+        [{#sasl_mechanism{mechanism = '$1',
+            password_type = '$2',
+            _ = '_'},
+            case catch ejabberd_auth:store_type(Host) of
+                external ->
+                    [{'==', '$2', plain}];
+                scram ->
+                    [{'/=', '$2', digest}];
+                {'EXIT', {undef, [{Module, store_type, []} | _]}} ->
+                    ?WARNING_MSG("~p doesn't implement the function store_type/0", [Module]),
+                    [];
+                _Else ->
+                    []
+            end,
+            ['$1']}]).
 
 -spec server_new(Service :: binary(),
                  ServerFQDN :: ejabberd:server(),
@@ -232,13 +226,4 @@ server_step(State, ClientIn) ->
 	    {error, Error, Username};
 	{error, Error} ->
 	    {error, Error}
-    end.
-
-%% @doc Remove the anonymous mechanism from the list if not enabled for the
-%% given host
--spec filter_anonymous(ejabberd:server(), [mechanism()]) -> [mechanism()].
-filter_anonymous(Host, Mechs) ->
-    case ejabberd_auth_anonymous:is_sasl_anonymous_enabled(Host) of
-        true  -> Mechs;
-        false -> Mechs -- [<<"ANONYMOUS">>]
     end.

@@ -30,11 +30,10 @@
 %%--------------------------------------------------------------------
 
 all() ->
-    [{group, auth_requests_plain}, {group, auth_requests_scram}].
+    [{group, auth_requests_scram}].
 
 groups() ->
     [
-     {auth_requests_plain, [sequence], all_tests()},
      {auth_requests_scram, [sequence], all_tests()}
     ].
 
