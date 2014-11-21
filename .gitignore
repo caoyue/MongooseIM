@@ -64,6 +64,7 @@ apps/ejabberd/src/config.log
 apps/ejabberd/src/ejabberd.init
 apps/ejabberd/src/ejabberdctl.example
 apps/ejabberd/src/eldap_filter_yecc.erl
+apps/ejabberd/test/ejabberd_config_SUITE_data/ejabberd.cfg
 apps/ejabberd/doc
 apps/mysql/doc
 apps/*/logs
