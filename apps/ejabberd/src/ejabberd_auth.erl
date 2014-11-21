@@ -67,11 +67,7 @@
 
 -export_type([authmodule/0]).
 
--type authmodule() :: ejabberd_auth_anonymous
-                    | ejabberd_auth_external
-                    | ejabberd_auth_internal
-                    | ejabberd_auth_ldap
-                    | ejabberd_auth_odbc.
+-type authmodule() :: ejabberd_auth_odbc.
 
 %%%----------------------------------------------------------------------
 %%% API
@@ -476,12 +472,5 @@ auth_modules() ->
 
 %% Return the list of authenticated modules for a given host
 -spec auth_modules(Server :: ejabberd:server()) -> [authmodule()].
-auth_modules(Server) ->
-    LServer = jlib:nameprep(Server),
-    Method = ejabberd_config:get_local_option({auth_method, LServer}),
-    Methods = if
-                  Method == undefined -> [];
-                  is_list(Method) -> Method;
-                  is_atom(Method) -> [Method]
-              end,
-    [list_to_atom("ejabberd_auth_" ++ atom_to_list(M)) || M <- Methods].
+auth_modules(_Server) ->
+    [ejabberd_auth_odbc].
