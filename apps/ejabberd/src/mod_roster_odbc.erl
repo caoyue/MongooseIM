@@ -486,6 +486,10 @@ fill_subscription_lists(JID, LServer, [IRaw | Is], F, T, P) ->
             Status  = if is_binary(Message) -> Message;
                            true -> <<>>
                           end,
+            NickEl = #xmlel{
+                    name = <<"nick">>,
+                    attrs = [{<<"xmlns">>, <<"http://jabber.org/protocol/nick">>}],
+                    children = [#xmlcdata{content = I#roster.name}]},
             StatusEl = #xmlel{
                     name = <<"status">>,
                     children = [#xmlcdata{content = Status}]},
@@ -494,7 +498,7 @@ fill_subscription_lists(JID, LServer, [IRaw | Is], F, T, P) ->
                     attrs = [{<<"from">>, jlib:jid_to_binary(I#roster.jid)},
                              {<<"to">>, jlib:jid_to_binary(JID)},
                              {<<"type">>, <<"subscribe">>}],
-                    children = [StatusEl]},
+                    children = [NickEl, StatusEl]},
             [El | P];
         _ -> 
              P
@@ -516,13 +520,17 @@ ask_to_pending(subscribe) -> out;
 ask_to_pending(unsubscribe) -> none;
 ask_to_pending(Ask) -> Ask.
 
-in_subscription(_, User, Server, JID, Type, Reason) ->
-    process_subscription(in, User, Server, JID, Type, Reason).
+in_subscription(_, User, Server, JID, subscribe = Type, Packet) ->
+    Reason = xml:get_path_s(Packet, [{elem, <<"status">>}, cdata]),
+    Nick = xml:get_path_s(Packet, [{elem, <<"nick">>}, cdata]),
+    process_subscription(in, User, Server, JID, Type, Reason, Nick);
+in_subscription(_, User, Server, JID, Type, Packet) ->
+    process_subscription(in, User, Server, JID, Type, <<>>, <<>>).
 
 out_subscription(User, Server, JID, Type) ->
-    process_subscription(out, User, Server, JID, Type, []).
+    process_subscription(out, User, Server, JID, Type, <<>>, <<>>).
 
-process_subscription(Direction, User, Server, JID1, Type, Reason) ->
+process_subscription(Direction, User, Server, JID1, Type, Reason, Nick) ->
     LUser = jlib:nodeprep(User),
     LServer = jlib:nameprep(Server),
     LJID = jlib:jid_tolower(JID1),
@@ -552,6 +560,7 @@ process_subscription(Direction, User, Server, JID1, Type, Reason) ->
                          []} ->
                             #roster{usj = {LUser, LServer, LJID},
                                     us = {LUser, LServer},
+
                                     jid = LJID}
                     end,
                 NewState = case Direction of
@@ -572,10 +581,10 @@ process_subscription(Direction, User, Server, JID1, Type, Reason) ->
                                                   Item#roster.ask,
                                                   Type)
                             end,
-                AskMessage = case NewState of
-                                 {_, both} -> Reason;
-                                 {_, in}   -> Reason;
-                                 _         -> <<>>
+                {Name, AskMessage} = case NewState of
+                                 {_, both} -> {Nick, Reason};
+                                 {_, in}   -> {Nick, Reason};
+                                 _         -> {<<>>, <<>>}
                              end,
                 case NewState of
                     none ->
@@ -587,6 +596,7 @@ process_subscription(Direction, User, Server, JID1, Type, Reason) ->
                     {Subscription, Pending} ->
                         NewItem = Item#roster{subscription = Subscription,
                                               ask = Pending,
+                                              name = Name,
                                               askmessage = AskMessage},
                         ItemVals = record_to_string(NewItem),
                         odbc_queries:roster_subscribe(LServer, Username, SJID, ItemVals),

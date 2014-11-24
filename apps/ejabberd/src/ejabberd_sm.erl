@@ -155,7 +155,7 @@ close_session(SID, User, Server, Resource) ->
                             Server :: ejabberd:server(),
                             _JID :: ejabberd:jid(),
                             _Type :: any(),
-                            _Reason :: any()) -> any() | {stop, false}.
+                            _Packet :: any()) -> any() | {stop, false}.
 check_in_subscription(Acc, User, Server, _JID, _Type, _Reason) ->
     case ejabberd_auth:is_user_exists(User, Server) of
         true ->
@@ -491,14 +491,13 @@ do_route(From, To, Packet) ->
         From :: ejabberd:jid(),
         To :: ejabberd:jid(),
         Packet :: jlib:xmlel(),
-        Type :: 'subscribe' | 'subscribed' | 'unsubscribe' | 'unsubscribed',
-        Reason :: any()) -> boolean().
-do_route_no_resource_presence_prv(From, To, Packet, Type, Reason) ->
+        Type :: 'subscribe' | 'subscribed' | 'unsubscribe' | 'unsubscribed') -> boolean().
+do_route_no_resource_presence_prv(From, To, Packet, Type) ->
     is_privacy_allow(From, To, Packet) andalso ejabberd_hooks:run_fold(
                                                  roster_in_subscription,
                                                  To#jid.lserver,
                                                  false,
-                                                 [To#jid.user, To#jid.server, From, Type, Reason]).
+                                                 [To#jid.user, To#jid.server, From, Type, Packet]).
 
 
 -spec do_route_no_resource_presence(binary(),
@@ -506,14 +505,13 @@ do_route_no_resource_presence_prv(From, To, Packet, Type, Reason) ->
                                     To :: ejabberd:jid(),
                                     Packet :: jlib:xmlel()) -> boolean().
 do_route_no_resource_presence(<<"subscribe">>, From, To, Packet) ->
-    Reason = xml:get_path_s(Packet, [{elem, <<"status">>}, cdata]),
-    do_route_no_resource_presence_prv(From, To, Packet, subscribe, Reason);
+    do_route_no_resource_presence_prv(From, To, Packet, subscribe);
 do_route_no_resource_presence(<<"subscribed">>, From, To, Packet) ->
-    do_route_no_resource_presence_prv(From, To, Packet, subscribed, <<>>);
+    do_route_no_resource_presence_prv(From, To, Packet, subscribed);
 do_route_no_resource_presence(<<"unsubscribe">>, From, To, Packet) ->
-    do_route_no_resource_presence_prv(From, To, Packet, unsubscribe, <<>>);
+    do_route_no_resource_presence_prv(From, To, Packet, unsubscribe);
 do_route_no_resource_presence(<<"unsubscribed">>, From, To, Packet) ->
-    do_route_no_resource_presence_prv(From, To, Packet, unsubscribed, <<>>);
+    do_route_no_resource_presence_prv(From, To, Packet, unsubscribed);
 do_route_no_resource_presence(_, _, _, _) ->
     true.
 
