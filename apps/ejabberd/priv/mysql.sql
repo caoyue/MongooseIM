@@ -52,6 +52,7 @@ CREATE TABLE rosterusers (
     server character(1) NOT NULL,
     subscribe text NOT NULL,
     type text,
+    private boolean NOT NULL DEFAULT false,
     created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) CHARACTER SET utf8;
 
@@ -331,6 +332,7 @@ CREATE TABLE groupuser (
     groupid int NOT NULL,
     jid varchar(250) CHARACTER SET binary NOT NULL,
     nickname varchar(250) CHARACTER SET binary,
+    private boolean NOT NULL DEFAULT false,
     joined_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) CHARACTER SET utf8;
 CREATE INDEX group_jid_index ON groupuser (jid);
