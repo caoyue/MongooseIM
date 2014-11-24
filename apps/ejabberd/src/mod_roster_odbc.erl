@@ -240,7 +240,7 @@ get_roster(LUser, LServer) ->
     Username = ejabberd_odbc:escape(LUser),
     case catch odbc_queries:get_roster(LServer, Username) of
         {selected, [<<"username">>, <<"jid">>, <<"nick">>, <<"subscription">>, <<"ask">>,
-                    <<"askmessage">>, <<"server">>, <<"subscribe">>, <<"type">>],
+                    <<"askmessage">>, <<"server">>, <<"subscribe">>, <<"type">>, <<"private">>],
          Items} when is_list(Items) ->
             JIDGroups = case catch odbc_queries:get_roster_jid_groups(LServer, Username) of
                             {selected, [<<"jid">>, <<"grp">>], JGrps}
@@ -273,7 +273,7 @@ get_roster(LUser, LServer) ->
 
 
 item_to_xml(Item) ->
-    Attrs1 = [{"jid", jlib:jid_to_binary(Item#roster.jid)}],
+    Attrs1 = [{"jid", jlib:jid_to_binary(Item#roster.jid)},{"private",Item#roster.private}],
     Attrs2 = case Item#roster.name of
                  <<"">> ->
                      Attrs1;
@@ -943,7 +943,7 @@ get_jid_info(_, User, Server, JID) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 raw_to_record(LServer, {User, BJID, Nick, BSubscription, BAsk, AskMessage,
-                        _Server, _Subscribe, _Type}) ->
+                        _Server, _Subscribe, _Type, Private}) ->
     case jlib:binary_to_jid(BJID) of
         error ->
             error;
@@ -969,7 +969,8 @@ raw_to_record(LServer, {User, BJID, Nick, BSubscription, BAsk, AskMessage,
                     name = Nick,
                     subscription = Subscription,
                     ask = Ask,
-                    askmessage = AskMessage}
+                    askmessage = AskMessage,
+                    private = Private}
     end.
 
 record_to_string(#roster{us = {User, _Server},
