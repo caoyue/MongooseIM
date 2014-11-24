@@ -18,8 +18,7 @@ stop(Host) ->
 
 %% @doc create group
 %% https://github.com/ZekeLu/MongooseIM/wiki/Extending-XMPP#3-create-a-group
-create_group(From, _To, #iq{sub_el = SubEl} = IQ) ->
-    #jid{luser = LUser, lserver = LServer} = From,
+create_group(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = SubEl} = IQ) ->
     UserJid = jlib:jid_to_binary({LUser, LServer, <<>>}),
     GroupName = xml:get_tag_attr_s(<<"groupname">>, SubEl),
     case odbc_groupchat:create_group(LServer, UserJid, GroupName) of
@@ -37,8 +36,7 @@ group_to_json(GroupName, GroupId, Owner) ->
 
 %% @doc add members
 %% https://github.com/ZekeLu/MongooseIM/wiki/Extending-XMPP#4-add-memebers-to-a-group
-add_members(From, _To, #iq{sub_el = SubEl} = IQ) ->
-    #jid{luser = LUser, lserver = LServer} = From,
+add_members(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = SubEl} = IQ) ->
     UserJid = jlib:jid_to_binary({LUser, LServer, <<>>}),
     GroupId = xml:get_tag_attr_s(<<"groupid">>, SubEl),
     case odbc_groupchat:is_user_in_group(LServer, UserJid, GroupId) of
@@ -99,8 +97,7 @@ do_add_members(LServer, GroupId, ExistsMembers, NewMembers, IQ, SubEl) ->
 
 %% @doc create and add members to group
 %% https://github.com/ZekeLu/MongooseIM/wiki/Extending-XMPP#5-create-a-group-and-add-memebers-to-it
-create_and_add(From, _To, #iq{sub_el = SubEl} = IQ) ->
-    #jid{luser = LUser, lserver = LServer} = From,
+create_and_add(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = SubEl} = IQ) ->
     UserJid = jlib:jid_to_binary({LUser, LServer, <<>>}),
     GroupName = xml:get_tag_attr_s(<<"groupname">>, SubEl),
     MembersList = mochijson2:decode(xml:get_tag_cdata(SubEl)),
@@ -128,8 +125,7 @@ create_and_add(From, _To, #iq{sub_el = SubEl} = IQ) ->
 
 %% @doc get_members by groupid
 %% https://github.com/ZekeLu/MongooseIM/wiki/Extending-XMPP#2-get-members-of-a-group-by-groupdid
-get_members(From, _To, #iq{sub_el = SubEl} = IQ) ->
-    #jid{luser = LUser, lserver = LServer} = From,
+get_members(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = SubEl} = IQ) ->
     UserJid = jlib:jid_to_binary({LUser, LServer, <<>>}),
     GroupId = xml:get_tag_attr_s(<<"groupid">>, SubEl),
     case odbc_groupchat:is_user_in_group(LServer, UserJid, GroupId) of
@@ -151,8 +147,7 @@ members_to_json(Members) ->
 
 %% @doc get groups by jid
 %% https://github.com/ZekeLu/MongooseIM/wiki/Extending-XMPP#1-get-all-groups
-get_groups(From, _To, #iq{sub_el = SubEl} = IQ) ->
-    #jid{luser = LUser, lserver = LServer} = From,
+get_groups(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = SubEl} = IQ) ->
     UserJid = jlib:jid_to_binary({LUser, LServer, <<>>}),
     case odbc_groupchat:get_groups_by_jid(LServer, UserJid) of
         {ok, Rs} when is_list(Rs) ->
@@ -169,8 +164,7 @@ grouplist_to_json(List) ->
 
 %% @doc get groupinfo by groupid
 %% https://github.com/ZekeLu/MongooseIM/wiki/Extending-XMPP#10-get-group-info-by-groupid
-get_groupinfo(From, _To, #iq{sub_el = SubEl} = IQ) ->
-    #jid{luser = LUser, lserver = LServer} = From,
+get_groupinfo(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = SubEl} = IQ) ->
     UserJid = jlib:jid_to_binary({LUser, LServer, <<>>}),
     GroupId = xml:get_tag_attr_s(<<"groupid">>, SubEl),
     case odbc_groupchat:is_user_in_group(LServer, UserJid, GroupId) of
@@ -188,8 +182,7 @@ get_groupinfo(From, _To, #iq{sub_el = SubEl} = IQ) ->
 
 %% @doc set group name
 %% https://github.com/ZekeLu/MongooseIM/wiki/Extending-XMPP#6-modify-group-name
-set_groupname(From, _To, #iq{sub_el = SubEl} = IQ) ->
-    #jid{luser = LUser, lserver = LServer} = From,
+set_groupname(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = SubEl} = IQ) ->
     GroupId = xml:get_tag_attr_s(<<"groupid">>, SubEl),
     UserJid = jlib:jid_to_binary({LUser, LServer, <<>>}),
     case odbc_groupchat:get_members_by_groupid(LServer, GroupId) of
@@ -214,8 +207,7 @@ set_groupname(From, _To, #iq{sub_el = SubEl} = IQ) ->
 
 %% @doc remove members from group
 %% https://github.com/ZekeLu/MongooseIM/wiki/Extending-XMPP#8-remove-members-from-a-group-a-user-quit-a-group-or-an-owner-remove-members
-remove_members(From, _To, #iq{sub_el = SubEl} = IQ) ->
-    #jid{luser = LUser, lserver = LServer} = From,
+remove_members(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = SubEl} = IQ) ->
     GroupId = xml:get_tag_attr_s(<<"groupid">>, SubEl),
     UserJid = jlib:jid_to_binary({LUser, LServer, <<>>}),
     MembersList = mochijson2:decode(xml:get_tag_cdata(SubEl)),
@@ -253,8 +245,7 @@ do_remove_members(#iq{sub_el = SubEl} = IQ, LServer, GroupId, MembersList) ->
 
 %% @doc dismiss group, must be owner of the group
 %% https://github.com/ZekeLu/MongooseIM/wiki/Extending-XMPP#7-dismiss-a-group-by-its-owner
-dismiss_group(From, _To, #iq{sub_el = SubEl} = IQ) ->
-    #jid{luser = LUser, lserver = LServer} = From,
+dismiss_group(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = SubEl} = IQ) ->
     GroupId = xml:get_tag_attr_s(<<"groupid">>, SubEl),
     UserJid = jlib:jid_to_binary({LUser, LServer, <<>>}),
     case odbc_groupchat:is_user_own_group(LServer, UserJid, GroupId) of
@@ -277,8 +268,7 @@ dismiss_group(From, _To, #iq{sub_el = SubEl} = IQ) ->
 
 %% @doc set nickname in group
 %% https://github.com/ZekeLu/MongooseIM/wiki/Extending-XMPP#9-a-memeber-modify-his-group-nickname
-set_nickname(From, _To, #iq{sub_el = SubEl} = IQ) ->
-    #jid{luser = LUser, lserver = LServer} = From,
+set_nickname(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = SubEl} = IQ) ->
     GroupId = xml:get_tag_attr_s(<<"groupid">>, SubEl),
     NickName = xml:get_tag_attr_s(<<"nickname">>, SubEl),
     UserJid = jlib:jid_to_binary({LUser, LServer, <<>>}),
@@ -300,9 +290,14 @@ push_groupmember(GroupId, GroupName, GroupOwner, Server, ToList, MembersInfoList
     FromAttr = {<<"from">>, From},
     TypeAttr = {<<"type">>, <<"chat">>},
     Contents = groupmember_json(MembersInfoList, Action),
+    PreAttrs = [{<<"xmlns">>, ?NS_GROUPCHAT}, {<<"type">>, <<"groupmember">>},
+                {<<"groupid">>, GroupId}, {<<"groupname">>, GroupName}],
+    Attrs = case GroupOwner of
+                <<>> -> PreAttrs;
+                _ -> [{<<"master">>, GroupOwner} | PreAttrs]
+            end,
     Packet = {xmlel, <<"message">>, [],
-              [{xmlel, <<"push">>, [{<<"xmlns">>, ?NS_GROUPCHAT}, {<<"type">>, <<"groupmember">>},
-                                    {<<"groupid">>, GroupId}, {<<"groupname">>, GroupName}, {<<"master">>, GroupOwner}],
+              [{xmlel, <<"push">>, Attrs,
                 [{xmlcdata, Contents}]}
               ]},
     FromJid = jlib:make_jid(GroupId, Server, <<>>),
