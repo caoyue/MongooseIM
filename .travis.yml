@@ -25,10 +25,10 @@ branches:
 notifications:
         email: lvzecai@gmail.com
 otp_release:
-        - R15B03
+        - 17.1
 env:
         global:
-                - TARBALL_NAME=${TRAVIS_BUILD_NUMBER}-${TRAVIS_COMMIT:0:6}.tar.gz
+                - TARBALL_NAME=${TRAVIS_BUILD_NUMBER}-${TRAVIS_PULL_REQUEST/false/$TRAVIS_BRANCH}-${TRAVIS_COMMIT:0:6}.tar.gz
         matrix:
                 - TEST_CONFIG=odbc_redis DB=mysql
 
