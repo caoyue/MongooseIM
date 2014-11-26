@@ -9,8 +9,7 @@ before_script:
 script: tools/travis-test.sh
 
 after_success:
-        - tar cvzf $TARBALL_NAME -C rel/mongooseim/ .
-        - curl --ftp-create-dirs -T $TARBALL_NAME -u $FTP_USER:$FTP_PASSWORD ftp://$FTP_SERVER/mongooseim/$TARBALL_NAME
+        - tools/travis-upload-release.sh
 
 after_script:
         - cat `ls -1 -d -t apps/ejabberd/logs/ct_run* | head -1`/apps.ejabberd.logs/run.*/suite.log
@@ -29,6 +28,14 @@ otp_release:
 env:
         global:
                 - TARBALL_NAME=${TRAVIS_BUILD_NUMBER}-${TRAVIS_PULL_REQUEST/false/$TRAVIS_BRANCH}-${TRAVIS_COMMIT:0:6}.tar.gz
+                - TEST_CONFIG=odbc_redis
+                - DB=mysql
         matrix:
-                - TEST_CONFIG=odbc_redis DB=mysql
-
+                - SPEC=embedded
+                - SPEC=spec1
+                - SPEC=spec2
+                - SPEC=spec3
+                - SPEC=spec4
+                - SPEC=spec5
+                - SPEC=spec5
+                - SPEC=spec6
