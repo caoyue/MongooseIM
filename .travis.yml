@@ -21,6 +21,7 @@ services: redis-server
 branches:
         only:
                 - master
+                - dev
 notifications:
         email: lvzecai@gmail.com
 otp_release:
