@@ -804,9 +804,10 @@ wait_for_feature_request({xmlstreamelement, El}, StateData) ->
                                                "Use of STARTTLS required")),
                     send_trailer(StateData),
                     {stop, normal, StateData};
-                true ->
+                true ->    %% this will add cellphone active flow.
                     process_unauthenticated_stanza(StateData, El),
                     fsm_next_state(wait_for_feature_request, StateData)
+
             end
     end;
 wait_for_feature_request(timeout, StateData) ->
