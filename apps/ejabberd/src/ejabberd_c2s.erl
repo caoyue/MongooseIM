@@ -1124,29 +1124,6 @@ session_established(closed, StateData) ->
     ?DEBUG("Session established closed - trying to enter resume_session", []),
     maybe_enter_resume_session(StateData#state.stream_mgmt_id, StateData).
 
-add_timestamp(#xmlel{children = Children} = XmlEl) ->
-    case xml:get_subtag(XmlEl, <<"info">>) of
-        false -> XmlEl;
-        InfoEl ->
-            {{Year, Month, Day}, {Hour, Minute, Second}} = calendar:universal_time(),
-            TimeStamp = list_to_binary(io_lib:format("~4..0w-~2..0w-~2..0wT~2..0w:~2..0w:~2..0wZ",
-                                                     [Year, Month, Day, Hour, Minute, Second])),
-            #xmlel{attrs = Attrs} = InfoEl,
-            NewAttrs = [{<<"timestamp">>, TimeStamp} | Attrs],
-            NewInfoEL = InfoEl#xmlel{attrs = NewAttrs},
-
-            NewChildrens = lists:foldl(fun(E, Acc0) ->
-                                               case E of
-                                                   #xmlel{name = <<"info">>} ->
-                                                       [NewInfoEL | Acc0];
-                                                   _ ->
-                                                       [E | Acc0]
-                                               end end,
-                                       [],
-                                       Children),
-            XmlEl#xmlel{children = NewChildrens}
-    end.
-
 %% @doc Process packets sent by user (coming from user on c2s XMPP
 %% connection)
 -spec session_established2(El :: jlib:xmlel(), state()) -> fsm_return().
@@ -1227,9 +1204,15 @@ session_established2(El, StateData) ->
                         ejabberd_hooks:run(user_send_packet,
                                            Server,
                                            [FromJID, ToJID, NewEl]),
-                        TimeEl = add_timestamp(NewEl),
-                        check_privacy_route(FromJID, StateData, FromJID,
-                                            ToJID, TimeEl),
+                        %% the hook to filter all user sent messages.
+                        %% expected result: FilteredEl | drop
+                        case ejabberd_hooks:run_fold(filter_user_send_message, NewEl, []) of
+                            drop ->
+                                ?DEBUG("drop packet=~p~n", [NewEl]);
+                            FilteredEl ->
+                                check_privacy_route(FromJID, StateData, FromJID,
+                                    ToJID, FilteredEl)
+                        end,
                         StateData;
                     _ ->
                         StateData
