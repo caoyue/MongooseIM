@@ -67,7 +67,8 @@ create_and_add(LServer, GroupName, MembersList, UserJid) ->
                                            ejabberd_odbc:escape(GroupName), "','", ejabberd_odbc:escape(UserJid), "');"]),
                 Result = ejabberd_odbc:sql_query_t([<<"select last_insert_id();">>]),
                 {selected, _, [{RId}]} = Result,
-                QueryList = make_add_query([UserJid | MembersList], [], RId),
+                AllMembers = [UserJid | MembersList],
+                QueryList = make_add_query(lists:usort(AllMembers), [], RId),
                 lists:foreach(fun(X) ->
                                       ejabberd_odbc:sql_query_t(X)
                               end, QueryList),
