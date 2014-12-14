@@ -677,9 +677,10 @@ do_route_message(From, To, Packet) ->
                                    To :: ejabberd:jid(),
                                    Packet :: jlib:xmlel()) -> 'ok' | 'stop'.
 try_distribute_group_message(From, To, Packet) ->
-    case xml:get_subtag(Packet, <<"info">>) of
-        false -> no_group_message;
-        InfoTag ->
+    case {xml:get_tag_attr_s(<<"type">>, Packet), xml:get_subtag(Packet, <<"info">>)} of
+        {_, false} -> no_group_message;
+        {<<"error">>, _} -> no_group_message;
+        {_, InfoTag}->
             case xml:get_tag_attr_s(<<"groupChat">>, InfoTag) of
                 <<"1">> ->
                     case xml:get_subtag(InfoTag, <<"sender">>) of
@@ -715,9 +716,11 @@ try_distribute_group_message(From, To, Packet) ->
                                     ejabberd_router:route(To, From, Err)
                             end;
                         _ ->
-                            %% the client should not include the <sender/> element
-                            Err = jlib:make_error_reply(Packet, ?ERR_BAD_REQUEST),
-                            ejabberd_router:route(To, From, Err)
+                            %% inbound packets should not include the <sender/> element
+                            %% if a client make a mistake to include the <sender/> element,
+                            %% the mod_aft_message module will remove it
+                            %% so only resent offline messages will include a <sender/> and arrive here
+                            no_group_message
                     end;
                 _ ->
                     no_group_message
