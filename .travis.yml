@@ -6,12 +6,10 @@ before_install:
 install: tools/travis-build.sh
 before_script:
         - tools/travis-setup-db.sh
-# script: tools/travis-test.sh
-script: echo "skip testing temporarily"
+script: tools/travis-test.sh
 
 after_success:
-        - tar cvzf $TARBALL_NAME -C rel/mongooseim/ .
-        - curl --ftp-create-dirs -T $TARBALL_NAME -u $FTP_USER:$FTP_PASSWORD ftp://$FTP_SERVER/mongooseim/$TARBALL_NAME
+        - tools/travis-upload-release.sh
 
 after_script:
         - cat `ls -1 -d -t apps/ejabberd/logs/ct_run* | head -1`/apps.ejabberd.logs/run.*/suite.log
@@ -23,13 +21,22 @@ services: redis-server
 branches:
         only:
                 - master
+                - dev
 notifications:
         email: lvzecai@gmail.com
 otp_release:
-        - R15B03
+        - 17.1
 env:
         global:
-                - TARBALL_NAME=${TRAVIS_BUILD_NUMBER}-${TRAVIS_COMMIT:0:6}.tar.gz
+                - TARBALL_NAME=${TRAVIS_BUILD_NUMBER}-${TRAVIS_PULL_REQUEST/false/$TRAVIS_BRANCH}-${TRAVIS_COMMIT:0:6}.tar.gz
+                - TEST_CONFIG=odbc_redis
+                - DB=mysql
         matrix:
-                - TEST_CONFIG=odbc_redis DB=mysql
-
+                - SPEC=embedded
+                - SPEC=spec1
+                - SPEC=spec2
+                - SPEC=spec3
+                - SPEC=spec4
+                - SPEC=spec5
+                - SPEC=spec5
+                - SPEC=spec6

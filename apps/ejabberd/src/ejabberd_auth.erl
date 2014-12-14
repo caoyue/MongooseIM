@@ -39,7 +39,7 @@
          check_password_with_authmodule/3,
          check_password_with_authmodule/5,
          try_register/3,
-         try_register/5,
+         try_register_with_phone_or_email/6,
          dirty_get_registered_users/0,
          get_vh_registered_users/1,
          get_vh_registered_users/2,
@@ -55,11 +55,8 @@
          plain_password_required/1,
          store_type/1,
          entropy/1,
-         get_jid_by_loginname/2,
-         get_info_by_loginname/2,
-         loginname_exists/2,
-         account_info/2,
-         activate_user/2
+         activate_user/2,
+         check_phone_and_email/3
         ]).
 
 -export([check_digest/4]).
@@ -70,11 +67,7 @@
 
 -export_type([authmodule/0]).
 
--type authmodule() :: ejabberd_auth_anonymous
-                    | ejabberd_auth_external
-                    | ejabberd_auth_internal
-                    | ejabberd_auth_ldap
-                    | ejabberd_auth_odbc.
+-type authmodule() :: ejabberd_auth_odbc.
 
 %%%----------------------------------------------------------------------
 %%% API
@@ -237,17 +230,11 @@ try_register(User, Server, Password) ->
             end
     end.
 
-%% register by email or phone number.
-%% Loginname: email or phone number.
-try_register(User, Server, Password, Loginname, Type) ->
-    %% has check Loginname uniqueness in mod_register.
+%% register with email or phone number.
+try_register_with_phone_or_email(User, Server, Password, Phone, Email, Nick) ->
     case lists:member(jlib:nameprep(Server), ?MYHOSTS) of
         true ->
-            Res = lists:foldl(fun(_M, {atomic, ok} = Res) -> Res;
-                                 (M, _) ->
-                                      M:try_register(User, Server, Password, Loginname, Type)
-                              end,
-                              {error, not_allowed}, auth_modules(Server)),
+            Res = ejabberd_auth_odbc:try_register(User, Server, Password, Phone, Email, Nick),
             case Res of
                 {atomic, ok} ->
                     ejabberd_hooks:run(register_user, Server, [User, Server]),
@@ -324,33 +311,8 @@ get_vh_registered_users_number(Server, Opts) ->
         end, auth_modules(Server))).
 
 
-loginname_exists(LoginName, Server) ->
-    case get_jid_by_loginname(LoginName, Server) of
-        error -> false;
-        _ -> true
-    end.
-
-%% Get jid by loginname. loginname is cellphone or email.
--spec get_jid_by_loginname(LoginName :: binary(),
-                           Server :: binary) -> error | binary().
-get_jid_by_loginname(LoginName, Server) ->
-    Type = case binary:match(LoginName, [<<"@">>]) of
-               nomatch -> cellphone;
-               _ -> email
-           end,
-
-    ejabberd_auth_odbc:get_jid_by_loginname(LoginName, Server, Type).
-
-%% Get info by loginname. loginname is cellphone or email.
--spec get_info_by_loginname(LoginName :: binary(),
-                            Server :: binary) -> error | binary().
-get_info_by_loginname(LoginName, Server) ->
-    Type = case binary:match(LoginName, [<<"@">>]) of
-               nomatch -> cellphone;
-               _ -> email
-           end,
-    ejabberd_auth_odbc:get_info_by_loginname(LoginName, Server, Type).
-
+check_phone_and_email(Phone, Email, Server) ->
+    true.
 
 %% @doc Get the password of the user.
 -spec get_password(User :: ejabberd:user(),
@@ -376,7 +338,7 @@ get_password_s(User, Server) ->
 
 
 %% @doc Get the password of the user and the auth module.
--spec get_password_with_authmodule(User :: ejabberd:user(),
+-spec get_password_with_authmodule(User :: ejabberd:user() | {phone, binary()} | {email, binary()},
                                    Server :: ejabberd:server())
                                   -> {Password :: binary(), AuthModule :: authmodule()} | {'false', 'none'}.
 get_password_with_authmodule(User, Server) ->
@@ -433,13 +395,6 @@ is_user_exists_in_other_modules_loop([AuthModule | AuthModules], User, Server) -
                    [AuthModule, User, Server, Error]),
             maybe
     end.
-
-
-%% Note: be sure User is exist.
--spec account_info(User :: ejabberd:user(),
-                   Server :: ejabberd:server()) -> {binary(), binary()}| error.
-account_info(User, Server) ->
-    ejabberd_auth_odbc:account_info(User, Server).
 
 %% Note: be sure User is exist.
 -spec activate_user(User :: ejabberd:user(),
@@ -517,12 +472,5 @@ auth_modules() ->
 
 %% Return the list of authenticated modules for a given host
 -spec auth_modules(Server :: ejabberd:server()) -> [authmodule()].
-auth_modules(Server) ->
-    LServer = jlib:nameprep(Server),
-    Method = ejabberd_config:get_local_option({auth_method, LServer}),
-    Methods = if
-                  Method == undefined -> [];
-                  is_list(Method) -> Method;
-                  is_atom(Method) -> [Method]
-              end,
-    [list_to_atom("ejabberd_auth_" ++ atom_to_list(M)) || M <- Methods].
+auth_modules(_Server) ->
+    [ejabberd_auth_odbc].

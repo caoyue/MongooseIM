@@ -210,7 +210,8 @@ is_forwarded(SubTag) ->
 	end.
 
 remove_connection(User, Server, Resource, _Status)->
-    disable(Server, User, Resource),
+    {LUser, LServer, LResource} = jlib:jid_to_lower({User, Server, Resource}),
+    disable(LServer, LUser, LResource),
     ok.
     
 

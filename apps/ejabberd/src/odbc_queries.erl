@@ -101,9 +101,6 @@
          remove_old_offline_messages/2,
          remove_expired_offline_messages/2,
          remove_offline_messages/3,
-         get_jid_by_loginname/3,
-         get_info_by_loginname/3,
-         account_info/2,
          activate_user/2,
          set_vcard_with_no_transaction/28]).
 
@@ -256,11 +253,16 @@ del_last(LServer, Username) ->
       LServer,
       [<<"delete from last where username='">>, Username, "'"]).
 
-get_password(LServer, Username) ->
+get_password(LServer, User) ->
+    {Field, Value} = case User of
+                         {phone, Phone} -> {<<"cellphone">>, Phone};
+                         {email, Email} -> {<<"email">>, Email};
+                         Username -> {<<"username">>, Username}
+                     end,
     ejabberd_odbc:sql_query(
       LServer,
-      [<<"select password, pass_details from users "
-         "where username='">>, Username, <<"';">>]).
+      [<<"select username, password, pass_details from users where active=1 and ">>,
+          Field, <<"='">>, Value, <<"';">>]).
 
 set_password_t(LServer, Username, {Pass, PassDetails}) ->
     ejabberd_odbc:sql_transaction(
@@ -290,17 +292,12 @@ add_user(LServer, Username, Pass) ->
       [<<"insert into users(username, password) "
          "values ('">>, Username, <<"', '">>, Pass, <<"');">>]).
 
-add_user(LServer, Username, Pass, LoginName, Type) ->
-    Ins = case Type of
-              email ->
-                  <<"insert into users(username, password, email) values ('">>;
-              cellphone ->
-                  <<"insert into users(username, password, cellphone) values ('">>
-          end,
-    ejabberd_odbc:sql_query(
-      LServer,
-      [Ins, Username, <<"', '">>, Pass, <<"', '">>, LoginName, <<"');">>]).
-
+add_user(LServer, Username, {Pass, PassDetails}, Phone, Email) ->
+    Ins = <<"insert into users(username, password, pass_details, cellphone, email) values ('">>,
+    ejabberd_odbc:sql_query(LServer,
+        [Ins, Username, <<"', '">>, Pass, <<"', '">>, PassDetails, <<"', '">>, Phone, <<"', '">>, Email, <<"');">>]);
+add_user(LServer, Username, Pass, Phone, Email) ->
+    add_user(LServer, Username, {Pass, <<>>}, Phone, Email).
 
 del_user(LServer, Username) ->
     ejabberd_odbc:sql_query(
@@ -1206,38 +1203,6 @@ set_roster_version(Username, Version) ->
       LServer,
       ["EXECUTE dbo.set_roster_version '", Username, "', '", Version, "'"]).
 -endif.
-
-get_jid_by_loginname(LServer, LoginName, Type) ->
-    Sel = case Type of
-              email ->
-                  <<"select username from users where email='">>;
-              cellphone ->
-                  <<"select username from users where cellphone='">>
-          end,
-
-    ejabberd_odbc:sql_query(
-      LServer,
-      [Sel, LoginName, <<"';">>]).
-
-
-
-get_info_by_loginname(LServer, LoginName, Type) ->
-    Sel = case Type of
-              email ->
-                  <<"select username, password, active, created_at from users where email='">>;
-              cellphone ->
-                  <<"select username, password, active, created_at from users where cellphone='">>
-          end,
-
-    ejabberd_odbc:sql_query(
-      LServer,
-      [Sel, LoginName, <<"';">>]).
-
-account_info(Username, LServer) ->
-    ejabberd_odbc:sql_query(
-      LServer,
-      [<<"select active, created_at from users where username='">>, Username, <<"';">>]).
-
 
 activate_user(Username, LServer) ->
     ejabberd_odbc:sql_transaction(
