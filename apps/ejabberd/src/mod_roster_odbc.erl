@@ -239,9 +239,8 @@ get_user_roster(Acc, {LUser, LServer}) ->
 get_roster(LUser, LServer) ->
     Username = ejabberd_odbc:escape(LUser),
     case catch odbc_queries:get_roster(LServer, Username) of
-        {selected, [<<"username">>, <<"jid">>, <<"nick">>, <<"subscription">>, <<"ask">>,
-                    <<"askmessage">>, <<"server">>, <<"subscribe">>, <<"type">>, <<"private">>],
-         Items} when is_list(Items) ->
+        {selected, [<<"username">>, <<"jid">>, <<"nick">>, <<"subscription">>, <<"ask">>, <<"askmessage">>,
+            <<"server">>, <<"subscribe">>, <<"type">>, <<"private">>], Items} when is_list(Items) ->
             JIDGroups = case catch odbc_queries:get_roster_jid_groups(LServer, Username) of
                             {selected, [<<"jid">>, <<"grp">>], JGrps}
                               when is_list(JGrps) ->
@@ -326,7 +325,7 @@ process_item_set(From, To, #xmlel{attrs = Attrs, children = Els}) ->
             F = fun() ->
                         {selected,
                          [<<"username">>, <<"jid">>, <<"nick">>, <<"subscription">>,
-                          <<"ask">>, <<"askmessage">>, <<"server">>, <<"subscribe">>, <<"type">>],
+                          <<"ask">>, <<"askmessage">>, <<"server">>, <<"subscribe">>, <<"type">>, <<"private">>],
                          Res} = odbc_queries:get_roster_by_jid(LServer, Username, SJID),
                         Item = case Res of
                                    [] ->
@@ -469,9 +468,8 @@ get_subscription_lists(_, User, Server) ->
     JID = jlib:make_jid(User, Server, <<>>),
     Username = ejabberd_odbc:escape(LUser),
     case catch odbc_queries:get_roster(LServer, Username) of
-        {selected, [<<"username">>, <<"jid">>, <<"nick">>, <<"subscription">>, <<"ask">>,
-                    <<"askmessage">>, <<"server">>, <<"subscribe">>, <<"type">>],
-         Items} when is_list(Items) ->
+        {selected, [<<"username">>, <<"jid">>, <<"nick">>, <<"subscription">>, <<"ask">>, <<"askmessage">>,
+            <<"server">>, <<"subscribe">>, <<"type">>, <<"private">>], Items} when is_list(Items) ->
             fill_subscription_lists(JID, LServer, Items, [], [], []);
         _ ->
             {[], [], []}
@@ -541,7 +539,7 @@ process_subscription(Direction, User, Server, JID1, Type, Reason, Nick) ->
                     case odbc_queries:get_roster_by_jid(LServer, Username, SJID) of
                         {selected,
                          [<<"username">>, <<"jid">>, <<"nick">>, <<"subscription">>, <<"ask">>,
-                          <<"askmessage">>, <<"server">>, <<"subscribe">>, <<"type">>],
+                          <<"askmessage">>, <<"server">>, <<"subscribe">>, <<"type">>, <<"private">>],
                          [I]} ->
                             %% raw_to_record can return error, but
                             %% jlib_to_string would fail before this point
@@ -556,7 +554,7 @@ process_subscription(Direction, User, Server, JID1, Type, Reason, Nick) ->
                             R#roster{groups = Groups};
                         {selected,
                          [<<"username">>, <<"jid">>, <<"nick">>, <<"subscription">>, <<"ask">>,
-                          <<"askmessage">>, <<"server">>, <<"subscribe">>, <<"type">>],
+                          <<"askmessage">>, <<"server">>, <<"subscribe">>, <<"type">>, <<"private">>],
                          []} ->
                             #roster{usj = {LUser, LServer, LJID},
                                     us = {LUser, LServer},
@@ -856,9 +854,8 @@ get_in_pending_subscriptions(Ls, User, Server) ->
     LServer = JID#jid.lserver,
     Username = ejabberd_odbc:escape(LUser),
     case catch odbc_queries:get_roster(LServer, Username) of
-        {selected, [<<"username">>, <<"jid">>, <<"nick">>, <<"subscription">>, <<"ask">>,
-                    <<"askmessage">>, <<"server">>, <<"subscribe">>, <<"type">>],
-         Items} when is_list(Items) ->
+        {selected, [<<"username">>, <<"jid">>, <<"nick">>, <<"subscription">>, <<"ask">>, <<"askmessage">>,
+            <<"server">>, <<"subscribe">>, <<"type">>, <<"private">>], Items} when is_list(Items) ->
             Ls ++ lists:map(
                     fun(R) ->
                             Message = R#roster.askmessage,
