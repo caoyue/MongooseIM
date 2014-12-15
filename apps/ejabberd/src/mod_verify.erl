@@ -100,22 +100,25 @@ is_valify_link( Req ) ->
                 {Value, _} ->
                     case Value of
                         true ->
-                            {false, error};
+                            {false, error, error};
+                        undefined ->
+                            {false, error, error};
                         <<>> ->
-                            {false, error};
+                            {false, error, error};
                         _ ->
-                            {true, Value}
+                            {Host, _} = cowboy_req:host( Req ),
+                            {true, Value, Host}
                     end;
                 _ ->
-                    {false, error}
+                    {false, error, error}
             end;
         _ ->
-            {false, error}
+            {false, error, error}
     end.
 response_not_fount( Req ) ->
     cowboy_req:reply( 404, [
-                            {<<"content-type">>, <<"text/plain">>}
-                           ], <<"">>, Req ).
+                            {<<"content-type">>, <<"text/html">>}
+                           ], <<"Page not found">>, Req ).
 
 response_ok( Req ) ->
     cowboy_req:reply( 200,
@@ -131,55 +134,40 @@ response_failed( Req ) ->
                         <<"text/html">>}
                       ], <<?PAGE_FRONT/binary, "You account active failed, please try again later.", ?PAGE_END/binary>>, Req ).
 
+
 response_not_author( Req ) ->
     cowboy_req:reply( 400,
                       [{<<"content-type">>,
                         <<"text/html">>}
                       ], <<"Unauthorized">>, Req ).
 
-response_has_acvtived( Req ) ->
+response_not_author_or_actived( Req ) ->
     cowboy_req:reply( 200,
-                      [{<<"content-type">>,
-                        <<"text/html">>}
-                      ], <<?PAGE_FRONT/binary, "Your account have already acvtived, you can login kissnapp now.", ?PAGE_END/binary>>, Req ).
+        [{<<"content-type">>,
+            <<"text/html">>}
+        ], <<?PAGE_FRONT/binary, "Unauthorized or perpase your account has already acvtived.", ?PAGE_END/binary>>, Req ).
 
-
-response_timeout( Req ) ->
-    cowboy_req:reply( 200,
-                      [{<<"content-type">>,
-                        <<"text/html">>}
-                      ], <<?PAGE_FRONT/binary, "Your active link is timeout, Please register again and active new link in 72 hours", ?PAGE_END/binary>>, Req ).
 
 handle(Req, State) ->
-    case is_valify_link( Req ) of
-        { true, JID } ->
-            [ User, Server ] = string:tokens( binary_to_list( JID ), " @" ),
-            U = list_to_binary( User ),
-            S = list_to_binary( Server ),
-            case ejabberd_auth:is_user_exists( U, S ) of
-                true ->
-                    case ejabberd_auth:account_info( U, S ) of
-                      error ->
-                        { ok, Req2 } = response_failed( Req );
-                      { <<"true">>, _TimeStamp } ->
-                        { ok, Req2 } = response_has_acvtived( Req );
-                      { <<"false">>, TimeStamp } ->
-                        %%TOFIX: check timeout.
-                        case ejabberd_auth:activate_user( U, S ) of
-                          ok ->
-                            { ok, Req2 } = response_ok ( Req );
-                          _ ->
-                            { ok, Req2 } = response_failed( Req )
-                        end
-                    end;
-                _ ->
-                  { ok, Req2 } = response_not_author( Req )
-            end,
-            {ok, Req2, State };
-        { false, _ } ->
-            { ok, Req2 } = response_not_fount( Req ),
-            { ok, Req2, State }
+    case is_valify_link(Req) of
+        {true, Token, Server} ->
+            {ok, Req2} =
+                case ejabberd_auth:activate_email_register(Token, Server) of
+                    ok ->
+                        response_ok(Req);
+                    {error, bad_request} ->
+                        response_not_author(Req);
+                    {error, bad_request_or_actived} ->
+                        response_not_author_or_actived(Req);
+                    {error, _Reason} ->
+                        response_failed(Req)
+                end,
+            {ok, Req2, State};
+        _ ->
+            {ok, Req2} = response_not_fount(Req),
+            {ok, Req2, State}
     end.
 
 terminate(_Reason, _Req, _State) ->
     ok.
+

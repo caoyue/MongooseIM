@@ -32,7 +32,8 @@
          listmech/1,
          server_new/7,
          server_start/3,
-         server_step/2]).
+         server_step/2,
+         server_login/2]).
 
 -include("ejabberd.hrl").
 
@@ -227,3 +228,55 @@ server_step(State, ClientIn) ->
 	{error, Error} ->
 	    {error, Error}
     end.
+
+
+parse_request_type( Data )->
+    case binary:split( Data, <<":">>, [global]) of
+        [<<"phone">>, Phone, <<"code">>, Code] ->
+            {login, Phone, Code};
+        [<<"phone">>, Phone] ->
+            {get_code, Phone};
+        _ ->
+            error
+    end.
+
+% ejabberd_redis:cmd(["SADD", n(node()), hash(User, Server, Resource, Session#session.sid)] ),
+server_login(_State, ClientIn) ->
+    case parse_request_type( ClientIn ) of
+        {get_code, Phone} ->
+            Key = <<"login", Phone/binary>>,
+            KeyFrequenceLimit = <<Key/binary, "_limit">>,
+            Result =
+            case ejabberd_redis:cmd( ["EXISTS", [KeyFrequenceLimit]] ) of
+                1 -> frequence_is_high;
+                _ ->
+                   RandomCode = list_to_binary( ejabberd_redis:random_code( 6 ) ),
+                   ejabberd_redis:cmd( [["DEL", [Key]],
+                                        ["APPEND", [Key], [RandomCode]],
+                                        ["APPEND", [KeyFrequenceLimit], [<<"frequence_limit">>]],
+                                        ["EXPIRE", [KeyFrequenceLimit], 20]]),
+                   ok
+            end,
+            {continue, Result};
+        {login, Phone, Code} ->
+            Key = <<"login", Phone/binary>>,
+            [Value] = ejabberd_redis:cmd( ["MGET", [Key]] ),
+            if Code =:= Value ->
+                ejabberd_redis:cmd( ["DEL", [Key]] ),
+
+                case ejabberd_auth_odbc:user_info( <<"phone">>, Phone ) of
+                    not_exist  ->
+                        {error, <<"user not exist">>};
+                    {error, _Reason} ->
+                        {error, <<"system error">>};
+                    Result ->
+                        UserName = element( 1, Result ),
+                        {ok,  [{username, UserName}] }
+                end;
+                true ->
+                    {error, <<"error code">>}
+                end;
+        _ ->
+            {error, <<"bad request">>}
+    end.
+

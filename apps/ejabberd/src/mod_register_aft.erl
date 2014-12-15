@@ -121,68 +121,178 @@ process_iq(_From, _To, #iq{sub_el = SubEl} = IQ) ->
 %%% Internal functions
 %%%===================================================================
 
+check_do_what(PhoneTag, EmailTag, PasswordTag, CodeTag) ->
+    case {PhoneTag, EmailTag, PasswordTag, CodeTag} of
+        {Phone, false, false, false} ->
+            if Phone /= false ->
+                {ok, <<"phone">>};
+                true ->
+                    {error, bad_request}
+            end;
+        {Phone, false, false, Code} ->
+            if (Phone /= false) and (Code /= false) ->
+                {ok, <<"phone_code">>};
+                true ->
+                    {error, bad_request}
+            end;
+        {false, Email, Password, false} ->
+            if (Email /= false) and (Password /= false) ->
+                {ok, <<"email">>};
+                true ->
+                    {error, bad_request}
+            end;
+        _ ->
+            {error, bad_request}
+    end.
+
+% TOFIX: use "^+[0-9]{0,49}$" to replace "^[0-9]{0,49}$".
+check_phone_number_valid(Number) ->
+    case re:run(binary_to_list(Number), "^[0-9]{0,49}$") of
+        nomatch -> false;
+        _ -> true
+    end.
+
+%% Email Address: http://en.wikipedia.org/wiki/Email_address#Internationalization.
+%% simplify the detection conditions at here.
+check_email_address_valid(Email) ->
+    [LocalPart, Domain] = binary:split(Email, <<"@">>),
+    case re:run(binary_to_list(LocalPart), "^[a-zA-Z0-9&'\\.+-=_]+") of
+        nomatch -> false;
+        _ ->
+            case re:run(binary_to_list(LocalPart), "\\.{2}") of
+                nomatch ->
+                    case re:run(binary_to_list(Domain), "^[a-zA-Z0-9-]+\\.[a-zA-Z0-9-]{2,10}$") of
+                        nomatch -> false;
+                        _ -> true
+                    end;
+                _ -> false
+            end
+    end.
+
 process_unauthenticated_iq(Server,
-                           #iq{type = set, lang = Lang1, sub_el = SubEl} = IQ,
-                           IpAddress) ->
+    #iq{type = set, lang = Lang1, sub_el = SubEl} = IQ,
+    IpAddress) ->
     Lang = binary_to_list(Lang1),
     case check_timeout(IpAddress) of
         true ->
             PhoneTag = xml:get_subtag(SubEl, <<"phone">>),
             EmailTag = xml:get_subtag(SubEl, <<"email">>),
             PasswordTag = xml:get_subtag(SubEl, <<"password">>),
-            NickTag = xml:get_subtag(SubEl, <<"nick">>),
-            if ((PhoneTag =:= false) and (EmailTag =:= false)) or (PasswordTag =:= false) or (NickTag =:= false) ->
+            CodeTag = xml:get_subtag(SubEl, <<"code">>),
+            case check_do_what(PhoneTag, EmailTag, PasswordTag, CodeTag) of
+                {error, bad_request} ->
                     IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]};
-               true ->
-                    case try_register(get_tag_cdata(PhoneTag),
-                                      get_tag_cdata(EmailTag),
-                                      get_tag_cdata(PasswordTag),
-                                      get_tag_cdata(NickTag),
-                                      Server, Lang, IpAddress) of
+                {ok, <<"phone_code">>} ->
+                    ActiveResult =
+                        case ejabberd_auth:activate_phone_register(get_tag_cdata(PhoneTag),
+                            get_tag_cdata(CodeTag), Server) of
+                            ok ->
+                                ok;
+                            {error, bad_request} ->
+                                {error, ?ERR_BAD_REQUEST};
+                            {error, bad_request_or_actived} ->
+                                ErrText = "bad-request or perpase your account has already acvtived",
+                                {error, ?ERRT_NOT_ACCEPTABLE(Lang, ErrText)};
+                            {error, _Reason} ->
+                                {error, ?ERR_INTERNAL_SERVER_ERROR}
+                        end,
+                    case ActiveResult of
                         ok ->
                             IQ#iq{type = result,
-                                  sub_el = [SubEl]};
+                                sub_el = []};
                         {error, Error} ->
                             IQ#iq{type = error,
-                                  sub_el = [SubEl, Error]}
+                                sub_el = [SubEl, Error]}
+                    end;
+                {ok, RegisterType} ->
+                    case try_register(RegisterType,
+                        get_tag_cdata(PhoneTag),
+                        get_tag_cdata(EmailTag),
+                        get_tag_cdata(PasswordTag),
+                        Server, Lang, IpAddress) of
+                        ok ->
+                            IQ#iq{type = result,
+                                sub_el = []};
+                        {error, Error} ->
+                            IQ#iq{type = error,
+                                sub_el = [SubEl, Error]}
                     end
             end;
         false ->
-            ErrText = "Users are not allowed to register "
-                "accounts so quickly",
-            {error, ?ERRT_RESOURCE_CONSTRAINT(Lang, ErrText)}
+            ErrText = "Users are not allowed to register accounts so quickly",
+            IQ#iq{type = error,
+                sub_el = [SubEl, ?ERRT_RESOURCE_CONSTRAINT(Lang, ErrText)]}
     end.
 
-try_register(Phone, Email, Password, Nick, Server, Lang, IpAddress) ->
-    case ejabberd_auth:check_phone_and_email(Phone, Email, Server) of
-        false -> {error, ?ERR_CONFLICT};
+check_password(_Server, <<>>) ->
+    {error, error};
+check_password(Server, Password) ->
+    case is_strong_password(Server, Password) of
         true ->
-            case is_strong_password(Server, Password) of
-                true ->
-                    GUID = generate_guid(),
-                    JID = jlib:make_jid(GUID, Server, <<>>),
-                    case ejabberd_auth:try_register_with_phone_or_email(GUID, Server, Password, Phone, Email, Nick) of
-                        {atomic, ok} ->
-                            send_register_validation(GUID, Phone, Email, Server),
-                            send_welcome_message(JID),
-                            send_registration_notifications(JID, IpAddress),
-                            ok;
-                        Error ->
-                            remove_timeout(IpAddress),
-                            case Error of
-                                {atomic, exists} ->
-                                    {error, ?ERR_CONFLICT};
-                                {error, invalid_jid} ->
-                                    {error, ?ERR_JID_MALFORMED};
-                                {error, not_allowed} ->
-                                    {error, ?ERR_NOT_ALLOWED};
-                                {error, _Reason} ->
-                                    {error, ?ERR_INTERNAL_SERVER_ERROR}
-                            end
-                    end;
+            case ejabberd_auth_odbc:prepare_password(Server, Password) of
                 false ->
-                    ErrText = "The password is too weak",
-                    {error, ?ERRT_NOT_ACCEPTABLE(Lang, ErrText)}
+                    {error, invalid_password};
+                _ ->
+                    {ok, ok}
+            end;
+
+        false ->
+            {error, weak_password}
+    end.
+
+try_register(RegType, Phone, Email, Password, Server, Lang, IpAddress) ->
+    IsValidName = case RegType of
+                      <<"phone">> ->
+                          check_phone_number_valid(Phone);
+                      <<"email">> ->
+                          check_email_address_valid(Email)
+                  end,
+    case {IsValidName, RegType, check_password(Server, Password)} of
+        {false, _, _} ->
+            {error, ?ERR_JID_MALFORMED};
+        {true, <<"email">>, {error, weak_password}} ->
+            ErrText = "The password is too weak",
+            {error, ?ERRT_NOT_ACCEPTABLE(Lang, ErrText)};
+        {true, <<"email">>, {error, invalid_password}} ->
+            ErrText = "The password is invalid",
+            {error, ?ERRT_NOT_ACCEPTABLE(Lang, ErrText)};
+        {true, _, _} ->
+            case ejabberd_auth_odbc:user_info(Server, RegType, Phone) of
+                {error, _Reason} ->
+                    remove_timeout(IpAddress),
+                    {error, ?ERR_INTERNAL_SERVER_ERROR};
+                {info, _} ->
+                    remove_timeout(IpAddress),
+                    {error, ?ERR_CONFLICT};
+                _ -> %% not_exist ->
+                    GUID = generate_guid(),
+                    {Token, Subject, KeepAlive} = case RegType of
+                                           <<"phone">> ->
+                                               {list_to_binary(ejabberd_redis:random_code()), Phone, 3600}; % units s.
+                                           <<"email">> ->
+                                               {generate_guid(), Email, 24*3600}
+                                       end,
+                    ejabberd_redis:cmd(["DEL", [Subject]]),
+                    ejabberd_redis:cmd(["APPEND", [Subject], [RegType, <<":">>, GUID, <<":">>, Password, <<":">>, Token]]),
+                    ejabberd_redis:cmd(["EXPIRE", [Subject], KeepAlive]),
+
+                    case RegType of
+                        <<"phone">> ->
+                            %% TOFIX: send code message to phone.
+                            %SendMSG = "Kissnapp validation code is" ++ SMSCode ++", the code is valid in 60 minutes,
+                            %%          this code is only use for Kissnapp validation,
+                            %%          you shoule make sure this code is knowed only by you"
+                            send_msg_to_phone;
+
+                        <<"email">> ->
+                            LServer = jlib:nameprep(Server),
+                            %% TOFIX: how to deploy the web server and the XMPP server?
+                            TokenString = base64:encode(<<Token/binary, $@, Subject/binary>>),
+                            Href = <<"http://", LServer/binary, ":5280/verify?token=", TokenString/binary>>,
+                            kissnapp_email:send_validation_email(<<"Kissnapp Register Validation">>, Subject, Href)
+
+                    end,
+                    ok
             end
     end.
 
@@ -238,35 +348,7 @@ generate_guid() ->
                         crypto:rand_uniform(1, round(math:pow(2, 30))) - 1))).
 %% _end.
 
-%% TOFIX: send sms
-send_register_validation(_GUID, Phone, _Email, _Server) when Phone /= <<>> ->
-    sms;
-send_register_validation(GUID, _Phone, Email, Server) when Email /= <<>> ->
-    LServer = jlib:nameprep(Server),
-    BareJID = <<GUID/binary, $@, LServer/binary>>,
-    %% TOFIX: how to deploy the web server and the XMPP server?
-    Href = <<"http://", LServer/binary, ":5280/verify?token=", BareJID/binary>>,
-    kissnapp_email:send_validation_email(<<"Kissnapp Register Validation">>, Email, Href).
-
-
-send_welcome_message(JID) ->
-    Host = JID#jid.lserver,
-    case gen_mod:get_module_opt(Host, ?MODULE, welcome_message, {"", ""}) of
-        {"", ""} ->
-            ok;
-        {Subj, Body} ->
-            ejabberd_router:route(
-              jlib:make_jid(<<>>, Host, <<>>),
-              JID,
-              #xmlel{name = <<"message">>, attrs = [{<<"type">>, <<"normal">>}],
-                     children = [#xmlel{name = <<"subject">>,
-                                        children = [#xmlcdata{content = Subj}]},
-                                 #xmlel{name = <<"body">>,
-                                        children = [#xmlcdata{content = Body}]}]});
-        _ ->
-            ok
-    end.
-
+%% TOFIX: both register ok and activate account ok use this function if need.
 send_registration_notifications(UJID, Source) ->
     Host = UJID#jid.lserver,
     case gen_mod:get_module_opt(Host, ?MODULE, registration_watchers, []) of

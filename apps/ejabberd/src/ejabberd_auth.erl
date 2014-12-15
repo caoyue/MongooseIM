@@ -56,6 +56,8 @@
          store_type/1,
          entropy/1,
          activate_user/2,
+         activate_phone_register/3,
+         activate_email_register/2,
          check_phone_and_email/3
         ]).
 
@@ -64,6 +66,7 @@
 -export([auth_modules/1]).
 
 -include("ejabberd.hrl").
+-include("jlib.hrl").
 
 -export_type([authmodule/0]).
 
@@ -474,3 +477,108 @@ auth_modules() ->
 -spec auth_modules(Server :: ejabberd:server()) -> [authmodule()].
 auth_modules(_Server) ->
     [ejabberd_auth_odbc].
+
+
+%%%----------------------------------------------------------------------
+%%% Aft Register, Activation functions. 2014-12-11
+%%%----------------------------------------------------------------------
+-spec activate_phone_register(Phone :: binary(),
+    Token :: binary(),
+    Server :: ejabberd:server()
+) -> ok | {error, _}.
+activate_phone_register(Phone, Token, Server) ->
+    activate_register(Phone, Token, Server).
+
+-spec activate_email_register(TokenString :: binary(),
+    Server :: ejabberd:server()
+) -> ok | {error, _}.
+activate_email_register(TokenString, Server) ->
+    DecodeToken = case catch base64:decode(TokenString) of
+                      {'EXIT', _} ->
+                          <<"error">>;
+                      Data ->
+                          Data
+                  end,
+    case binary:split(DecodeToken, <<"@">>) of
+        [Token, Email] ->
+            activate_register(Email, Token, Server);
+        _ ->
+            {error, bad_request}
+    end.
+
+activate_register(Subject, Token, Server) ->
+    if (Subject /= <<>>) and (Token /= <<>>) ->
+        case ejabberd_redis:cmd(["MGET", [Subject]]) of
+            [] ->
+                {error, bad_request_or_actived};
+            [Mark] ->
+                case binary:split(Mark, <<":">>, [global]) of
+                    [Type, UserName, Password, OriginalToken] ->
+                        if Token =:= OriginalToken ->
+                            case aft_register(Type, UserName, Server, Password, Subject) of
+                                ok ->
+                                    ejabberd_redis:cmd(["DEL", [Subject]]),
+                                    JID = jlib:make_jid(UserName, Server, <<>>),
+                                    send_welcome_message(JID),
+                                    {ok, UserName};
+                                {error, Reason} ->
+                                    {error, Reason}
+                            end;
+                            true ->
+                                {error, bad_request}
+                        end;
+                    _ ->
+                        {error, bad_request}
+                end
+        end;
+        true ->
+            {error, bad_request}
+    end.
+
+aft_register(Type, UserName, Server, Password, Subject) ->
+    LServer = jlib:nameprep(Server),
+    SQL = case Type of
+              <<"phone">> ->
+                  [<<"insert into users(username, cellphone) values ('">>,
+                      UserName, <<"', '">>, Subject, <<"');">>];
+              <<"email">> ->
+                  case ejabberd_auth_odbc:prepare_password(Server, Password) of
+                      {<<"">>, PassDetailsEscaped} ->
+                          [<<"insert into users(username, pass_details, email) values ('">>,
+                              UserName, <<"', '">>, PassDetailsEscaped, <<"', '">>, Subject, <<"');">>];
+                      Password2 ->
+                          [<<"insert into users(username, password, email) values ('">>,
+                              UserName, <<"', '">>, Password2, <<"', '">>, Subject, <<"');">>]
+                  end
+          end,
+    case catch ejabberd_odbc:sql_query(LServer, SQL) of
+        {updated, 1} ->
+            ejabberd_hooks:run(register_user, Server, [UserName, Server]),
+            ok;
+        {updated, 0} ->
+            exists; %% should not occur. check in prepare register.
+        {error, Reason} ->
+            ?ERROR_MSG("ejabberd_auth: register error: ~p~n",
+                [Reason]),
+            {error, Reason}
+    end.
+
+
+send_welcome_message(JID) ->
+    Host = JID#jid.lserver,
+    case gen_mod:get_module_opt(Host, ?MODULE, welcome_message, {"", ""}) of
+        {"", ""} ->
+            ok;
+        {Subj, Body} ->
+            ejabberd_router:route(
+                jlib:make_jid(<<>>, Host, <<>>),
+                JID,
+                #xmlel{name = <<"message">>, attrs = [{<<"type">>, <<"normal">>}],
+                    children = [#xmlel{name = <<"subject">>,
+                        children = [#xmlcdata{content = Subj}]},
+                        #xmlel{name = <<"body">>,
+                            children = [#xmlcdata{content = Body}]}]});
+        _ ->
+            ok
+    end.
+

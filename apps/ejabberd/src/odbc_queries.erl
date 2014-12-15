@@ -261,7 +261,7 @@ get_password(LServer, User) ->
                      end,
     ejabberd_odbc:sql_query(
       LServer,
-      [<<"select username, password, pass_details from users where active=1 and ">>,
+      [<<"select username, password, pass_details from users where ">>,
           Field, <<"='">>, Value, <<"';">>]).
 
 set_password_t(LServer, Username, {Pass, PassDetails}) ->

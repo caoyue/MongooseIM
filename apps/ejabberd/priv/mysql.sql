@@ -21,9 +21,9 @@
 
 CREATE TABLE users (
     username varchar(250) PRIMARY KEY,
-    password text NOT NULL,
+    password text,
     pass_details text,
-    id varchar(50)
+    id varchar(50),
     email varchar(250),
     cellphone varchar(50),
     token varchar(250),

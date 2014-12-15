@@ -795,6 +795,48 @@ wait_for_feature_request({xmlstreamelement, El}, StateData) ->
                                            StateData)
                     end
             end;
+        {?NS_AFT_CODE, Name} ->
+            ClientIn = xml:get_cdata(Els),
+            case cyrsasl:server_login( StateData#state.sasl_state, ClientIn ) of
+                {continue, State} ->
+                    case State of
+                        frequence_is_high ->
+                            send_element(StateData,
+                                #xmlel{name = <<"phonecode">>,
+                                    attrs = [{<<"xmlns">>, <<"aft:phone">>}],
+                                    children = [#xmlel{name = <<"frequence">>}]});
+                        ok ->
+                            send_element(StateData,
+                                #xmlel{name = <<"phonecode">>,
+                                    attrs = [{<<"xmlns">>, <<"aft:phone">>}],
+                                    children = [#xmlel{name = <<"ok">>}]})
+                        end,
+                    fsm_next_state(wait_for_feature_request, StateData);
+                {ok, Props} ->
+                    (StateData#state.sockmod):reset_stream(
+                        StateData#state.socket),
+                    send_element(StateData,
+                        #xmlel{name = <<"phonecode">>,
+                            attrs = [{<<"xmlns">>, <<"aft:phone">>}],
+                            children = [#xmlel{name = <<"success">>}]}),
+                    U = xml:get_attr_s(username, Props),
+                    AuthModule = xml:get_attr_s(auth_module, Props),
+                    ?INFO_MSG("(~w) Accepted authentication for ~s by ~p",
+                        [StateData#state.socket, U, AuthModule]),
+                    fsm_next_state(wait_for_stream,
+                        StateData#state{
+                            streamid = new_id(),
+                            authenticated = true,
+                            auth_module = AuthModule,
+                            user = U});
+                {error, _Reson} ->
+                    send_element(StateData,
+                        #xmlel{name = <<"phonecode">>,
+                            attrs = [{<<"xmlns">>, <<"aft:phone">>}],
+                            children = [#xmlel{name = <<"failure">>}]}),
+                    fsm_next_state(wait_for_feature_request, StateData)
+
+            end;
         _ ->
             if
                 (SockMod == gen_tcp) and TLSRequired ->
