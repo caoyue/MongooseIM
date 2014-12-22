@@ -54,7 +54,8 @@
          phonelist_search/2,
          user_info/2,
          user_info/3,
-         prepare_password/2
+         prepare_password/2,
+         user_info_by_jid/2
         ]).
 
 -export([login/2, get_password/3]).
@@ -515,6 +516,22 @@ scram_passwords1(LServer, Count, Interval, ScramIterationCount) ->
 %% @doc Unimplemented gen_auth callbacks
 login(_User, _Server) -> erlang:error(not_implemented).
 get_password(_User, _Server, _DefaultValue) -> erlang:error(not_implemented).
+
+user_info_by_jid( User, Server ) ->
+    LServer = jlib:nameprep(Server),
+    Sel = <<"select username, password, pass_details, id, cellphone, email from users where username='">>,
+    try ejabberd_odbc:sql_query(LServer, [Sel, User, <<"';">>]) of
+        {selected, [<<"username">>, <<"password">>, <<"pass_details">>, <<"id">>, <<"cellphone">>, <<"email">>],
+            [{UserName, Password, PasswordDetails, ID, Cellphone, Email}]} ->
+            [{<<"username">>, UserName}, {<<"password">>, Password}, {<<"passworddetails">>, PasswordDetails},
+              {<<"id">>, ID}, {<<"phone">>, Cellphone}, {<<"email">>, Email}];
+        {selected, [<<"username">>, <<"password">>, <<"pass_details">>, <<"id">>, <<"email">>], [] } ->
+            not_exist;
+        {error, Error} ->
+            {error, Error} %% Typical error is that table doesn't exist
+    catch
+        _:B -> {error, B} %% Typical error is database not accessible
+    end.
 
 user_info(Type, Subject) ->
     Servers = ejabberd_config:get_global_option(hosts),

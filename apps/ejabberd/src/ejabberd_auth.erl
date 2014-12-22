@@ -58,7 +58,8 @@
          activate_user/2,
          activate_phone_register/3,
          activate_email_register/2,
-         check_phone_and_email/3
+         check_phone_and_email/3,
+         activate_email/2
         ]).
 
 -export([check_digest/4]).
@@ -537,30 +538,45 @@ activate_register(Subject, Token, Server) ->
 
 aft_register(Type, UserName, Server, Password, Subject) ->
     LServer = jlib:nameprep(Server),
-    SQL = case Type of
-              <<"phone">> ->
-                  [<<"insert into users(username, cellphone) values ('">>,
-                      UserName, <<"', '">>, Subject, <<"');">>];
-              <<"email">> ->
-                  case ejabberd_auth_odbc:prepare_password(Server, Password) of
-                      {<<"">>, PassDetailsEscaped} ->
-                          [<<"insert into users(username, pass_details, email) values ('">>,
-                              UserName, <<"', '">>, PassDetailsEscaped, <<"', '">>, Subject, <<"');">>];
-                      Password2 ->
-                          [<<"insert into users(username, password, email) values ('">>,
-                              UserName, <<"', '">>, Password2, <<"', '">>, Subject, <<"');">>]
-                  end
-          end,
-    case catch ejabberd_odbc:sql_query(LServer, SQL) of
-        {updated, 1} ->
-            ejabberd_hooks:run(register_user, Server, [UserName, Server]),
+    {SQL, Element} = case Type of
+                          <<"phone">> ->
+                              {[<<"insert into users(username, cellphone) values ('">>,
+                                  UserName, <<"', '">>, Subject, <<"');">>],
+                                  {xmlel, <<"TEL">>, [], [{xmlel, <<"NUMBER">>, [], [{xmlcdata, Subject}]}]}};
+                          <<"email">> ->
+                              {case ejabberd_auth_odbc:prepare_password(Server, Password) of
+                                   {<<"">>, PassDetailsEscaped} ->
+                                       [<<"insert into users(username, pass_details, email) values ('">>,
+                                           UserName, <<"', '">>, PassDetailsEscaped, <<"', '">>, Subject, <<"');">>];
+                                   Password2 ->
+                                       [<<"insert into users(username, password, email) values ('">>,
+                                           UserName, <<"', '">>, Password2, <<"', '">>, Subject, <<"');">>]
+                               end,
+                                  {xmlel, <<"EMAIL">>, [], [{xmlel, <<"USERID">>, [], [{xmlcdata, Subject}]}]}}
+                      end,
+    %% modify standard vcard format about 'EMAIL' and 'TEL' element.
+    %% assume one 'TEL' in vcard data.
+    %% keep 'NUMBER' in 'TEL' and 'USERID' in 'EMAIL', ignore other subelement.
+    VCardXml = {xmlel, <<"vCard">>, [{<<"xmlns">>, ?NS_VCARD}], [Element]},
+    {ok, VCardSearch} = mod_vcard:prepare_vcard_search_params(UserName, LServer, VCardXml),
+    F = fun() ->
+        case catch ejabberd_odbc:sql_query_t(SQL) of
+            {updated, 1} ->
+                mod_vcard_odbc:set_vcard_with_no_transaction(UserName, LServer, VCardXml, VCardSearch),
+                ok;
+            {updated, 0} ->
+                exists;
+            {error, Reason} ->
+                {error, Reason}
+        end end,
+    case ejabberd_odbc:sql_transaction(LServer, F) of
+        {atomic, ok} ->
+            ejabberd_hooks:run(vcard_set, LServer, [UserName, LServer, VCardXml]),
             ok;
-        {updated, 0} ->
-            exists; %% should not occur. check in prepare register.
+        {atomic, exists} ->
+            exists; %% should not occur.
         {error, Reason} ->
-            ?ERROR_MSG("ejabberd_auth: register error: ~p~n",
-                [Reason]),
-            {error, Reason}
+            ?ERROR_MSG("ejabberd_auth: register error: ~p~n", [Reason])
     end.
 
 
@@ -582,3 +598,114 @@ send_welcome_message(JID) ->
             ok
     end.
 
+activate_email(TokenString, Server) ->
+    DecodeToken = case catch base64:decode(TokenString) of
+                      {'EXIT', _} ->
+                          <<"error">>;
+                      Data ->
+                          Data
+                  end,
+    case binary:split(DecodeToken, <<"@">>) of
+        [Token, Email] ->
+            activate_email(Email, Token, Server);
+        _ ->
+            {error, bad_request}
+    end.
+
+activate_email( Email, Token, Server ) ->
+    if (Email /= <<>>) and (Token /= <<>>) ->
+        case ejabberd_redis:cmd(["MGET", [<<"bind@", Token/binary>>]]) of
+            [] ->
+                {error, bad_request_or_actived};
+            [Mark] ->
+                case binary:split(Mark, <<":">>, [global]) of
+                    [Type, OriginalEmail, Username] ->
+                        if Email =:= OriginalEmail ->
+                            update_phone_or_email( <<"email">>, Username, Server, Email),
+                            ejabberd_redis:cmd( ["DEL", [<<"bind@", Token/binary>>]] );
+                            true ->
+                                {error, bad_request}
+                        end;
+                    _ ->
+                        {error, bad_request}
+                end
+        end;
+        true ->
+            {error, bad_request}
+    end.
+
+unbind_phone_or_email(Type, User, Server) ->
+    case ejabberd_auth_odbc:user_info_by_jid(User, Server) of
+        not_exist ->
+            {error, not_exist};
+        {error, Reason} ->
+            {error, Reason};
+        Result ->
+            Phone = lists:keyfind(<<"phone">>, 1, Result),
+            Email = lists:keyfind(<<"email">>, 1, Result),
+            Password = case scram:enabled() of
+                           true ->
+                               lists:keyfind(<<"passworddetails">>, 1, Result);
+                           _ ->
+                               lists:keyfind(<<"password">>, 1, Result)
+                       end,
+            case Type of
+                <<"phone">> ->
+                    if (Phone /= <<>>) and (Email /= <<>>) and (Password /= <<>>) ->
+                        update_phone_or_email( Type, User, Server, "" );
+                        (Phone /= <<>>) and (Email /= <<>>) and (Password == <<>>) ->
+                            {error, empty_password};
+                        (Phone /= <<>>) and (Email == <<>>) ->
+                            {error, empty_phone}
+                    end;
+                <<"email">> ->
+                    if (Email /= <<>>) and (Phone /= <<>>) ->
+                        update_phone_or_email( Type, User, Server, "" );
+                        (Email /= <<>>) and (Phone == <<>>) ->
+                            {error, empty_email}
+                    end
+            end
+end.
+
+
+update_phone_or_email(Type, User, Server, Subject) ->
+    LSubject = stringprep:tolower(Subject),
+    LServer = jlib:nameprep(Server),
+    F = fun() ->
+        case ejabberd_odbc:sql_query_t([<<"select vcard from vcard where username='">>, User, <<"';">>]) of
+            {selected, [<<"vcard">>], [{SVCARD}]} ->
+                case xml_stream:parse_element(SVCARD) of
+                    {error, Reason} ->
+                        ?WARNING_MSG("not sending bad vcard xml ~p~n~p", [Reason, SVCARD]),
+                        error;
+                    #xmlel{name = "vCard", children = Children} = VCARD ->
+                        case Type of
+                            <<"phone">> ->
+                                VCARD1 = VCARD#xmlel{children = lists:keydelete(<<"TEL">>, #xmlel.name, Children)},
+                                NewTelEl = {xmlel, <<"TEL">>, [], [{xmlel, <<"NUMBER">>, [], []}]},
+                                NewVCARD = xml:append_subtags(VCARD1, NewTelEl),
+                                ejabberd_odbc:sql_query_t([<<"update vcard set vcard='">>, NewVCARD, <<"' where username='">>, User, <<"';">>]),
+                                ejabberd_odbc:sql_query_t([<<"update vcard_search set tel ='">>,Subject, <<"', ltel='">>, LSubject, <<"' where username='">>, User, <<"';">>]),
+                                ejabberd_odbc:sql_query_t([<<"update users set cellphone='">>, Subject, <<"' where username='">>, User, <<"';">>]),
+                                ok;
+                            <<"email">> ->
+                                VCARD1 = VCARD#xmlel{children = lists:keydelete(<<"EMAIL">>, #xmlel.name, Children)},
+                                NewTelEl = {xmlel, <<"EMAIL">>, [], [{xmlel, <<"USERID">>, [], []}]},
+                                NewVCARD = xml:append_subtags(VCARD1, NewTelEl),
+                                ejabberd_odbc:sql_query_t([<<"update vcard set vcard='">>, NewVCARD, <<"' where username='">>, User, <<"';">>]),
+                                ejabberd_odbc:sql_query_t([<<"update vcard_search set email ='">>, Subject, <<"', lemail='">>, LSubject, <<"' where username='">>, User, <<"';">>]),
+                                ejabberd_odbc:sql_query_t([<<"update users set email='">>, Subject, <<"' where username='">>, User, "';"]),
+                                ok
+                        end
+                end;
+            _ -> error
+        end
+    end,
+    case ejabberd_odbc:sql_transaction(LServer, F) of
+        {atomic, ok} ->
+            ok;
+        {atomic, error} ->
+            error;
+        {error, Reason} ->
+            Reason
+    end.

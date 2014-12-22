@@ -22,7 +22,7 @@
          unauthenticated_iq_register/4]).
 
 %% iq handler
--export([process_iq/3]).
+-export([process_iq/3, process_bind_iq/3]).
 
 -include("ejabberd.hrl").
 -include("jlib.hrl").
@@ -38,6 +38,10 @@ start(Host, Opts) ->
                                   ?MODULE, process_iq, IQDisc),
     gen_iq_handler:add_iq_handler(ejabberd_sm, Host, ?NS_AFT_REGISTER,
                                   ?MODULE, process_iq, IQDisc),
+    gen_iq_handler:add_iq_handler(ejabberd_local, Host, ?NS_AFT_BIND,
+        ?MODULE, process_bind_iq, IQDisc),
+    gen_iq_handler:add_iq_handler(ejabberd_sm, Host, ?NS_AFT_BIND,
+        ?MODULE, process_bind_iq, IQDisc),
     ejabberd_hooks:add(c2s_stream_features, Host,
                        ?MODULE, stream_feature_register, 50),
     ejabberd_hooks:add(c2s_unauthenticated_iq, Host,
@@ -55,7 +59,9 @@ stop(Host) ->
     ejabberd_hooks:delete(c2s_unauthenticated_iq, Host,
                           ?MODULE, unauthenticated_iq_register, 50),
     gen_iq_handler:remove_iq_handler(ejabberd_local, Host, ?NS_AFT_REGISTER),
-    gen_iq_handler:remove_iq_handler(ejabberd_sm, Host, ?NS_AFT_REGISTER).
+    gen_iq_handler:remove_iq_handler(ejabberd_sm, Host, ?NS_AFT_REGISTER),
+    gen_iq_handler:remove_iq_handler(ejabberd_local, Host, ?NS_AFT_BIND),
+    gen_iq_handler:remove_iq_handler(ejabberd_sm, Host, ?NS_AFT_BIND).
 
 clean_opts(Opts) ->
     lists:map(fun clean_opt/1, Opts).
@@ -116,6 +122,120 @@ process_iq(#jid{user = User, lserver = Server, lresource = Resource} = _From,
     end;
 process_iq(_From, _To, #iq{sub_el = SubEl} = IQ) ->
     IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}.
+
+process_bind_iq( #jid{user = User, lserver = Server, lresource = Resource} = _From,
+                 #jid{lserver = Server} = _To,
+                 #iq{type = set, lang = Lang1, sub_el = SubEl} = IQ ) ->
+    Lang = binary_to_list(Lang1),
+    Type = case { xml:get_subtag( SubEl, <<"phone">> ),
+                  xml:get_subtag( SubEl, <<"email">> ),
+                  xml:get_subtag( SubEl, <<"code">> )} of
+               { #xmlel{name = <<"phone">>}, false, false } ->
+                   <<"phone">>;
+               { false, #xmlel{name = <<"email">>}, false } ->
+                   <<"email">>;
+               { false, false, <<"code">> } ->
+                   <<"code">>;
+               _ ->
+                   error
+           end,
+    case SubEl of
+        #xmlel{name = <<"bind">>} ->
+            case Type of
+                error ->
+                    IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]};
+                <<"code">> ->
+                    case ejabberd_redis:cmd( ["MGET", [<<"bind@", User/binary>>]] ) of
+                        [] ->
+                            {error, bad_request};
+                        [Mark] ->
+                            case binary:split( Mark, <<":">>, [global] ) of
+                                [<<"phone">>, Phone, Token] ->
+                                    ejabberd:update_phone_or_email( <<"phone">>, User, Server, Phone),
+                                    ejabberd_redis:cmd( ["DEL", [<<"bind@", User/binary>>]] );
+                                _ ->
+                                    IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+                            end
+
+                    end;
+                _ ->
+                    case ejabberd_auth_odbc:user_info_by_jid( User, Server ) of
+                        not_exist ->
+                            {error, not_exist};
+                        {error, Reason} ->
+                            {error, Reason};
+                        Result ->
+                            Phone = lists:keyfind( <<"phone">>, 1, Result ),
+                            Email = lists:keyfind( <<"email">>, 1, Result ),
+                            Password = case scram:enabled() of
+                                           true ->
+                                               lists:keyfind(<<"passworddetails">>, 1, Result);
+                                           _ ->
+                                               lists:keyfind(<<"password">>, 1, Result)
+                                       end,
+                            case Type of
+                                <<"phone">> ->
+                                    if ( Phone =:= <<>>) and ( Email /= <<>> ) and ( Password /= <<>> ) ->
+                                        Token = list_to_binary( ejabberd_redis:random_code() ),
+                                        ejabberd_redis:cmd( [["APPEND", [ <<"bind@", User/binary>> ], [<<Type/binary, $:, Phone/binary, $:, Token>>]],
+                                                             ["EXPIRE", [ <<"bind@", User/binary>> ], 3600]]);
+                                        % TOFIX: send message to phone.
+                                        true ->
+                                            IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+                                    end;
+                                <<"email">> ->
+                                    if ( Email =:= <<>>) and ( Phone /= <<>> ) ->
+                                        Key = generate_guid(),
+                                        ejabberd_redis:cmd( [["APPEND", [ <<"bind@", Key/binary>> ], [<<Type/binary, $:, Email/binary, $:, User/binary>>]],
+                                                             ["EXPIRE", [ <<"bind@", Key/binary>> ], 24*3600]]),
+                                        LServer = jlib:nameprep(Server),
+                                        TokenString = base64:encode(<<Key/binary, $@, Email/binary>>),
+                                        Href = <<"http://", LServer/binary, ":5280/verify?activetoken=", TokenString/binary>>,
+                                        kissnapp_email:send_validation_email(<<"click to email validation">>, Email, Href);
+                                        true ->
+                                            IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+                                    end
+                            end
+
+                    end
+                end;
+
+        #xmlel{name = <<"unbind">>} ->
+            case Type of
+                error ->
+                    IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]};
+                _ ->
+                    case  ejabberd_auth:unbind_phone_or_email( Type, User, Server ) of
+                        {error, Reason} ->
+                            ErrText = case Reason of
+                                        empty_email ->
+                                            "email is empty";
+                                        empty_phone ->
+                                            "phone is empty";
+                                        password_phone ->
+                                            "phone is empty";
+                                        _ ->
+                                            "other"
+                                    end,
+                            Error = case Reason of
+                                        other ->
+                                            ?ERR_INTERNAL_SERVER_ERROR;
+                                        _ ->
+                                           ?ERRT_NOT_ACCEPTABLE(Lang, ErrText)
+                                    end,
+                            IQ#iq{type = error,
+                                sub_el = [SubEl, Error]};
+                        ok ->
+                            IQ#iq{type = result,
+                                sub_el = [SubEl]}
+                    end
+            end;
+        _ ->
+            IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+    end;
+process_bind_iq(_From, _To, #iq{sub_el = SubEl} = IQ) ->
+    IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}.
+
 
 %%%===================================================================
 %%% Internal functions

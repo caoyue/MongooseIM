@@ -90,37 +90,57 @@ stop(_Host) ->
 init(_Transport, Req, Opts) ->
     {ok, Req, Opts}.
 
-
-
-is_valify_link( Req ) ->
-    { Varlist, _ } = cowboy_req:qs_vals( Req ),
-    case length( Varlist ) of
-        1 ->
-            case cowboy_req:qs_val( <<"token">>, Req ) of
-                {Value, _} ->
-                    case Value of
-                        true ->
-                            {false, error, error};
-                        undefined ->
-                            {false, error, error};
-                        <<>> ->
-                            {false, error, error};
-                        _ ->
-                            {Host, _} = cowboy_req:host( Req ),
-                            {true, Value, Host}
-                    end;
-                _ ->
-                    {false, error, error}
+is_register_activation( Req ) ->
+    case cowboy_req:qs_val( <<"token">>, Req ) of
+        {Value, _} ->
+            if (Value =:= true ) or ( Value =:= undefined ) or ( Value =:= <<>> ) ->
+                false;
+                true ->
+                    {true, Value}
             end;
         _ ->
-            {false, error, error}
+            false
     end.
+
+is_email_activation( Req ) ->
+    case cowboy_req:qs_val( <<"activetoken">>, Req ) of
+        {Value, _} ->
+            if (Value =:= true ) or ( Value =:= undefined ) or ( Value =:= <<>> ) ->
+                false;
+                true ->
+                    {true, Value}
+            end;
+        _ ->
+            false
+    end.
+
+parse_link_type(Req) ->
+    {Varlist, _} = cowboy_req:qs_vals(Req),
+    if (length(Varlist) /= 1) ->
+        {false, error, error};
+        true ->
+            case {is_register_activation( Req ),
+                  is_email_activation( Req ) } of
+                { {ture, Value}, {false, _} } ->
+                    {Host, _} = cowboy_req:host( Req ),
+                    { register, Value, Host };
+                { {false, _}, {true, Value} } ->
+                    {Host, _} = cowboy_req:host( Req ),
+                    { email, Value, Host };
+                _ ->
+                    {error, error, error}
+
+
+            end
+    end.
+
+
 response_not_fount( Req ) ->
     cowboy_req:reply( 404, [
                             {<<"content-type">>, <<"text/html">>}
                            ], <<"Page not found">>, Req ).
 
-response_ok( Req ) ->
+response_register_ok( Req ) ->
     cowboy_req:reply( 200,
                       [{<<"content-type">>,
                         <<"text/html">>}
@@ -128,11 +148,19 @@ response_ok( Req ) ->
                       <<?SUCCESS_PAGE>>,
                       Req ).
 
+response_activation_ok(Req) ->
+    cowboy_req:reply(200,
+                    [{<<"content-type">>,
+                    <<"text/html">>}
+                    ],
+                    <<?PAGE_FRONT/binary, "Your email validation ok.", ?PAGE_END/binary>>, Req ).
+
+
 response_failed( Req ) ->
     cowboy_req:reply( 200,
                       [{<<"content-type">>,
                         <<"text/html">>}
-                      ], <<?PAGE_FRONT/binary, "You account active failed, please try again later.", ?PAGE_END/binary>>, Req ).
+                      ], <<?PAGE_FRONT/binary, "Your account active failed, please try again later.", ?PAGE_END/binary>>, Req ).
 
 
 response_not_author( Req ) ->
@@ -145,23 +173,34 @@ response_not_author_or_actived( Req ) ->
     cowboy_req:reply( 200,
         [{<<"content-type">>,
             <<"text/html">>}
-        ], <<?PAGE_FRONT/binary, "Unauthorized or perpase your account has already acvtived.", ?PAGE_END/binary>>, Req ).
+        ], <<?PAGE_FRONT/binary, "Unauthorized or perpase already acvtived.", ?PAGE_END/binary>>, Req ).
 
 
 handle(Req, State) ->
-    case is_valify_link(Req) of
-        {true, Token, Server} ->
-            {ok, Req2} =
-                case ejabberd_auth:activate_email_register(Token, Server) of
-                    ok ->
-                        response_ok(Req);
-                    {error, bad_request} ->
-                        response_not_author(Req);
-                    {error, bad_request_or_actived} ->
-                        response_not_author_or_actived(Req);
-                    {error, _Reason} ->
-                        response_failed(Req)
-                end,
+    case parse_link_type(Req) of
+        {register, Token, Server} ->
+            {ok, Req2} = case ejabberd_auth:activate_email_register(Token, Server) of
+                             ok ->
+                                 response_register_ok(Req);
+                             {error, bad_request} ->
+                                 response_not_author(Req);
+                             {error, bad_request_or_actived} ->
+                                 response_not_author_or_actived(Req);
+                             {error, _Reason} ->
+                                 response_failed(Req)
+                         end,
+            {ok, Req2, State};
+        {email, Token, Server} ->
+            {ok, Req2} = case ejabberd_auth:activate_email(Token, Server) of
+                             ok ->
+                                 response_activation_ok(Req);
+                             {error, bad_request} ->
+                                 response_not_author(Req);
+                             {error, bad_request_or_actived} ->
+                                 response_not_author_or_actived(Req);
+                             {error, _Reason} ->
+                                 response_failed(Req)
+                         end,
             {ok, Req2, State};
         _ ->
             {ok, Req2} = response_not_fount(Req),
