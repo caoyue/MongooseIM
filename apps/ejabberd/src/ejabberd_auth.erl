@@ -55,8 +55,9 @@
          plain_password_required/1,
          store_type/1,
          entropy/1,
-         activate_user/2,
-         check_phone_and_email/3
+         check_phone_and_email/3,
+         activate_phone_register/3,
+         activate_email_register/2
         ]).
 
 -export([check_digest/4]).
@@ -64,6 +65,7 @@
 -export([auth_modules/1]).
 
 -include("ejabberd.hrl").
+-include("jlib.hrl").
 
 -export_type([authmodule/0]).
 
@@ -396,12 +398,6 @@ is_user_exists_in_other_modules_loop([AuthModule | AuthModules], User, Server) -
             maybe
     end.
 
-%% Note: be sure User is exist.
--spec activate_user(User :: ejabberd:user(),
-                    Server :: ejabberd:server()) -> ok | failed.
-activate_user(User, Server) ->
-    ejabberd_auth_odbc:activate_user(User, Server).
-
 %% @doc Remove user.
 %% Note: it may return ok even if there was some problem removing the user.
 -spec remove_user(User :: ejabberd:user(),
@@ -474,3 +470,113 @@ auth_modules() ->
 -spec auth_modules(Server :: ejabberd:server()) -> [authmodule()].
 auth_modules(_Server) ->
     [ejabberd_auth_odbc].
+
+
+%%%----------------------------------------------------------------------
+%%% Aft Register, Activation functions. 2014-12-11
+%%%----------------------------------------------------------------------
+-spec activate_phone_register(Phone :: binary(),
+    Token :: binary(),
+    Server :: ejabberd:server()
+) -> ok | {error, _}.
+activate_phone_register(Phone, Token, Server) ->
+    activate_register(Phone, Token, Server).
+
+-spec activate_email_register(TokenString :: binary(),
+    Server :: ejabberd:server()
+) -> ok | {error, _}.
+activate_email_register(TokenString, Server) ->
+    DecodeToken = case catch base64:decode(TokenString) of
+                      {'EXIT', _} ->
+                          <<"error">>;
+                      Data ->
+                          Data
+                  end,
+    case binary:split(DecodeToken, <<"@">>) of
+        [Token, Email] ->
+            activate_register(Email, Token, Server);
+        _ ->
+            {error, bad_request}
+    end.
+
+activate_register(Subject, Token, Server) ->
+    if (Subject /= <<>>) and (Token /= <<>>) ->
+        case ejabberd_redis:cmd(["MGET", [Subject]]) of
+            [] ->
+                {error, bad_request_or_actived};
+            [undefined] ->
+                {error, bad_request_or_actived};
+            [Mark] ->
+                case binary:split(Mark, <<":">>, [global]) of
+                    [Type, UserName, Password, Nickname, OriginalToken] ->
+                        if Token =:= OriginalToken ->
+                            case aft_register(Type, UserName, Server, Password, Nickname, Subject) of
+                                ok ->
+                                    ejabberd_redis:cmd(["DEL", [Subject]]),
+                                    JID = jlib:make_jid(UserName, Server, <<>>),
+                                    mod_register_aft:send_welcome_message(JID),
+                                    {ok, UserName};
+                                {error, Reason} ->
+                                    {error, Reason}
+                            end;
+                            true ->
+                                {error, bad_request}
+                        end;
+                    _ ->
+                        {error, bad_request}
+                end
+        end;
+        true ->
+            {error, bad_request}
+    end.
+
+aft_register(Type, UserName, Server, Password, Nickname, Subject) ->
+    LServer = jlib:nameprep(Server),
+    {SQL, Elements} = case Type of
+                         <<"phone">> ->
+                             {case ejabberd_auth_odbc:prepare_password(Server, Password) of
+                                  {<<"">>, PassDetailsEscaped} ->
+                                      [<<"insert into users(username, pass_details, cellphone) values ('">>,
+                                          UserName, <<"', '">>, PassDetailsEscaped, <<"', '">>, Subject, <<"');">>];
+                                  Password2 ->
+                                      [<<"insert into users(username, password, cellphone) values ('">>,
+                                          UserName, <<"', '">>, Password2, <<"', '">>, Subject, <<"');">>]
+                              end,
+                                 [{xmlel, <<"TEL">>, [], [{xmlel, <<"NUMBER">>, [], [{xmlcdata, Subject}]}]}]};
+                         <<"email">> ->
+                             {case ejabberd_auth_odbc:prepare_password(Server, Password) of
+                                  {<<"">>, PassDetailsEscaped} ->
+                                      [<<"insert into users(username, pass_details, email) values ('">>,
+                                          UserName, <<"', '">>, PassDetailsEscaped, <<"', '">>, Subject, <<"');">>];
+                                  Password2 ->
+                                      [<<"insert into users(username, password, email) values ('">>,
+                                          UserName, <<"', '">>, Password2, <<"', '">>, Subject, <<"');">>]
+                              end,
+                                 [{xmlel, <<"EMAIL">>, [], [{xmlel, <<"USERID">>, [], [{xmlcdata, Subject}]}]}]}
+                     end,
+    %% modify standard vcard format about 'EMAIL' and 'TEL' element.
+    %% assume one 'TEL' in vcard data.
+    %% keep 'NUMBER' in 'TEL' and 'USERID' in 'EMAIL', ignore other subelement.
+    VCardXml = {xmlel, <<"vCard">>,
+                [{<<"xmlns">>, ?NS_VCARD}],
+                [{xmlel, <<"NICKNAME">>, [], [{xmlcdata, Nickname}]} | Elements]},
+    {ok, VCardSearch} = mod_vcard:prepare_vcard_search_params(UserName, LServer, VCardXml),
+    F = fun() ->
+        case catch ejabberd_odbc:sql_query_t(SQL) of
+            {updated, 1} ->
+                mod_vcard_odbc:set_vcard_with_no_transaction(UserName, LServer, VCardXml, VCardSearch),
+                ok;
+            {updated, 0} ->
+                exists;
+            {error, Reason} ->
+                {error, Reason}
+        end end,
+    case ejabberd_odbc:sql_transaction(LServer, F) of
+        {atomic, ok} ->
+            ejabberd_hooks:run(vcard_set, LServer, [UserName, LServer, VCardXml]),
+            ok;
+        {atomic, exists} ->
+            exists; %% should not occur.
+        {error, Reason} ->
+            ?ERROR_MSG("ejabberd_auth: register error: ~p~n", [Reason])
+    end.

@@ -170,6 +170,14 @@ init([]) ->
          worker,
          [mod_muc_iq]},
     ShaperSpecs = shaper_srv:child_specs(),
+    EmailSupervisor =
+        {kissnapp_email_sup,
+            {ejabberd_tmp_sup, start_link,
+                [kissnapp_email_sup, kissnapp_email]},
+            permanent,
+            infinity,
+            supervisor,
+            [ejabberd_tmp_sup]},
 
     {ok, {{one_for_one, 10, 1},
           ShaperSpecs ++
@@ -190,4 +198,5 @@ init([]) ->
            IQSupervisor,
            STUNSupervisor,
            Listener,
+           EmailSupervisor,
            MucIQ]}}.

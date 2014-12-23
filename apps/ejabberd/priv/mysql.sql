@@ -25,8 +25,8 @@ CREATE TABLE users (
     pass_details text,
     email varchar(250),
     cellphone varchar(50),
+    id varchar(50),
     token varchar(250),
-    active boolean DEFAULT true,
     created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) CHARACTER SET utf8;
 

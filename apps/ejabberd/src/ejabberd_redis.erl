@@ -9,7 +9,7 @@
 -module(ejabberd_redis).
 
 -export([start_link/1]).
--export([cmd/1, cmd/2]).
+-export([cmd/1, cmd/2, random_code/0, random_code/1]).
 
 -define(POOL_NAME, redis_pool).
 
@@ -39,3 +39,18 @@ cmd(Cmd) ->
               | {'error',_}.
 cmd(Cmd, Timeout) ->
     redo:cmd(cuesport:get_worker(?POOL_NAME), Cmd, Timeout).
+
+-spec random_code() -> list().
+random_code() ->
+    random_code( 6 ).
+
+-spec random_code(integer()) -> list().
+random_code(Length) ->
+    {A1, A2, A3} = now(),
+    random:seed(A1, A2, A3),
+    lists:foldl(fun(_E, Acc) ->
+        I1 = random:uniform(10),
+        I2 = I1 + 47, % 48 ~ 56,
+        [I2 | Acc]
+    end, [], lists:seq(1, Length)),
+    "666666". %% TOFIX delete this line when sms is ok.

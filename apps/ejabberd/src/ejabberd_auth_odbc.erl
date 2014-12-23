@@ -50,8 +50,9 @@
          remove_user/3,
          store_type/1,
          plain_password_required/0,
-         activate_user/2,
-         phonelist_search/2
+         phonelist_search/2,
+         user_info_by_phone_or_email/3,
+         prepare_password/2
         ]).
 
 -export([login/2, get_password/3]).
@@ -300,24 +301,6 @@ get_vh_registered_users_number(Server, Opts) ->
             0
     end.
 
-%% Note: be sure User is exist.
--spec activate_user(User :: ejabberd:user(),
-                    Server :: ejabberd:server()) -> ok | failed.
-activate_user(User, Server) ->
-    case jlib:nodeprep(User) of
-        error ->
-            false;
-        LUser ->
-            Username = ejabberd_odbc:escape(LUser),
-            LServer = jlib:nameprep(Server),
-            case catch odbc_queries:activate_user(Username, LServer) of
-                ok ->
-                    ok;
-                _ ->
-                    failed
-            end
-    end.
-
 phonelist_search(PhoneList, LServer) ->
     lists:foldl(fun(E, R) ->
                         case catch ejabberd_odbc:sql_query(LServer, [<<"select username from users where cellphone='">>, E, <<"';">>]) of
@@ -512,3 +495,37 @@ scram_passwords1(LServer, Count, Interval, ScramIterationCount) ->
 %% @doc Unimplemented gen_auth callbacks
 login(_User, _Server) -> erlang:error(not_implemented).
 get_password(_User, _Server, _DefaultValue) -> erlang:error(not_implemented).
+
+%% @doc get user information from users.
+user_info_by_phone_or_email(Server, Type, Subject) ->
+    LServer = jlib:nameprep(Server),
+    case Type of
+        <<"phone">> ->
+            Sel = <<"select username, password, pass_details, id, email from users where cellphone='">>,
+            try ejabberd_odbc:sql_query(LServer, [Sel, Subject, <<"';">>]) of
+                {selected, [<<"username">>, <<"password">>, <<"pass_details">>, <<"id">>, <<"email">>],
+                    [{UserName, Password, PasswordDetails, ID, EMail}]} ->
+                    {info,[{<<"username">>, UserName}, {<<"password">>, Password}, {<<"pass_details">>, PasswordDetails},
+                        {<<"id">>, ID}, {<<"email">>, EMail}]};
+                {selected, [<<"username">>, <<"password">>, <<"pass_details">>, <<"id">>, <<"email">>], [] } ->
+                    not_exist;
+                {error, Error} ->
+                    {error, Error} %% Typical error is that table doesn't exist
+            catch
+                _:B -> {error, B} %% Typical error is database not accessible
+            end;
+        _ ->
+            Sel = <<"select username, password, pass_details, id, cellphone from users where email='">>,
+            try ejabberd_odbc:sql_query(LServer, [Sel, Subject, <<"';">>]) of
+                {selected, [<<"username">>, <<"password">>, <<"pass_details">>, <<"id">>, <<"cellphone">>],
+                    [{UserName, Password, PasswordDetails, ID, Cellphone}]} ->
+                    {info, [{<<"username">>, UserName}, {<<"password">>, Password}, {<<"pass_details">>, PasswordDetails},
+                        {<<"id">>, ID}, {<<"phone">>, Cellphone}]};
+                {selected, [<<"username">>, <<"password">>, <<"pass_details">>, <<"id">>, <<"cellphone">>], [] } ->
+                    not_exist;
+                {error, Error} ->
+                    {error, Error} %% Typical error is that table doesn't exist
+            catch
+                _:B -> {error, B} %% Typical error is database not accessible
+            end
+    end.
