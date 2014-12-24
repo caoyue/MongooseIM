@@ -532,25 +532,28 @@ activate_register(Subject, Token, Server) ->
 
 aft_register(Type, UserName, Server, Password, Nickname, Subject) ->
     LServer = jlib:nameprep(Server),
+    SUserName = ejabberd_odbc:escape( UserName ),
+    SSubject = ejabberd_odbc:escape( Subject ),
+
     {SQL, Elements} = case Type of
                          <<"phone">> ->
                              {case ejabberd_auth_odbc:prepare_password(Server, Password) of
                                   {<<"">>, PassDetailsEscaped} ->
                                       [<<"insert into users(username, pass_details, cellphone) values ('">>,
-                                          UserName, <<"', '">>, PassDetailsEscaped, <<"', '">>, Subject, <<"');">>];
+                                          SUserName, <<"', '">>, PassDetailsEscaped, <<"', '">>, SSubject, <<"');">>];
                                   Password2 ->
                                       [<<"insert into users(username, password, cellphone) values ('">>,
-                                          UserName, <<"', '">>, Password2, <<"', '">>, Subject, <<"');">>]
+                                          SUserName, <<"', '">>, Password2, <<"', '">>, SSubject, <<"');">>]
                               end,
                                  [{xmlel, <<"TEL">>, [], [{xmlel, <<"NUMBER">>, [], [{xmlcdata, Subject}]}]}]};
                          <<"email">> ->
                              {case ejabberd_auth_odbc:prepare_password(Server, Password) of
                                   {<<"">>, PassDetailsEscaped} ->
                                       [<<"insert into users(username, pass_details, email) values ('">>,
-                                          UserName, <<"', '">>, PassDetailsEscaped, <<"', '">>, Subject, <<"');">>];
+                                          SUserName, <<"', '">>, PassDetailsEscaped, <<"', '">>, SSubject, <<"');">>];
                                   Password2 ->
                                       [<<"insert into users(username, password, email) values ('">>,
-                                          UserName, <<"', '">>, Password2, <<"', '">>, Subject, <<"');">>]
+                                          SUserName, <<"', '">>, Password2, <<"', '">>, SSubject, <<"');">>]
                               end,
                                  [{xmlel, <<"EMAIL">>, [], [{xmlel, <<"USERID">>, [], [{xmlcdata, Subject}]}]}]}
                      end,

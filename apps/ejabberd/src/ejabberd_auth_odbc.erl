@@ -499,10 +499,11 @@ get_password(_User, _Server, _DefaultValue) -> erlang:error(not_implemented).
 %% @doc get user information from users.
 user_info_by_phone_or_email(Server, Type, Subject) ->
     LServer = jlib:nameprep(Server),
+    SSubject = ejabberd_odbc:escape(Subject),
     case Type of
         <<"phone">> ->
             Sel = <<"select username, password, pass_details, id, email from users where cellphone='">>,
-            try ejabberd_odbc:sql_query(LServer, [Sel, Subject, <<"';">>]) of
+            try ejabberd_odbc:sql_query(LServer, [Sel, SSubject, <<"';">>]) of
                 {selected, [<<"username">>, <<"password">>, <<"pass_details">>, <<"id">>, <<"email">>],
                     [{UserName, Password, PasswordDetails, ID, EMail}]} ->
                     {info,[{<<"username">>, UserName}, {<<"password">>, Password}, {<<"pass_details">>, PasswordDetails},
@@ -516,7 +517,7 @@ user_info_by_phone_or_email(Server, Type, Subject) ->
             end;
         _ ->
             Sel = <<"select username, password, pass_details, id, cellphone from users where email='">>,
-            try ejabberd_odbc:sql_query(LServer, [Sel, Subject, <<"';">>]) of
+            try ejabberd_odbc:sql_query(LServer, [Sel, SSubject, <<"';">>]) of
                 {selected, [<<"username">>, <<"password">>, <<"pass_details">>, <<"id">>, <<"cellphone">>],
                     [{UserName, Password, PasswordDetails, ID, Cellphone}]} ->
                     {info, [{<<"username">>, UserName}, {<<"password">>, Password}, {<<"pass_details">>, PasswordDetails},
