@@ -338,3 +338,8 @@ CREATE TABLE groupuser (
 CREATE INDEX group_jid_index ON groupuser (jid);
 CREATE INDEX group_id_index ON groupuser (groupid);
 -- aft mod_groupchat tables end
+
+CREATE TABLE privatemode (
+    jid varchar(250) CHARACTER SET binary PRIMARY KEY NOT NULL,
+    password varchar(250) CHARACTER SET binary NOT NULL
+) CHARACTER SET utf8;
