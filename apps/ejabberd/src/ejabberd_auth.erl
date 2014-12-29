@@ -513,6 +513,7 @@ activate_register(Subject, Token, Server) ->
                             case aft_register(Type, UserName, Server, Password, Nickname, Subject) of
                                 ok ->
                                     ejabberd_redis:cmd(["DEL", [Subject]]),
+                                    ejabberd_hooks:run(register_user, Server, [UserName, Server]),
                                     JID = jlib:make_jid(UserName, Server, <<>>),
                                     mod_register_aft:send_welcome_message(JID),
                                     {ok, UserName};

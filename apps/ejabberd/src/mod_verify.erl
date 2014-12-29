@@ -125,7 +125,7 @@ response_ok( Req ) ->
                       Req ).
 
 response_failed( Req ) ->
-    cowboy_req:reply( 200,
+    cowboy_req:reply( 400,
                       [{<<"content-type">>,
                         <<"text/html">>}
                       ], <<?PAGE_FRONT/binary, "You account active failed, please try again later.", ?PAGE_END/binary>>, Req ).
@@ -137,7 +137,7 @@ response_not_author( Req ) ->
                       ], <<"Unauthorized">>, Req ).
 
 response_not_author_or_actived_or_expire( Req ) ->
-    cowboy_req:reply( 200,
+    cowboy_req:reply( 400,
                       [{<<"content-type">>,
                         <<"text/html">>}
                       ], <<?PAGE_FRONT/binary, "Unauthorized or link is invalid", ?PAGE_END/binary>>, Req ).
