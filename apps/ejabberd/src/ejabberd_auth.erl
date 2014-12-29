@@ -312,7 +312,19 @@ get_vh_registered_users_number(Server, Opts) ->
 
 
 check_phone_and_email(Phone, Email, Server) ->
-    true.
+    {RegType, Subject} = if (Email /= <<>>) and (Phone =:= <<>>) ->
+                                {<<"email">>, Email};
+                             true ->
+                                {<<"phone">>, Phone}
+                         end,
+    case ejabberd_auth_odbc:user_info_by_phone_or_email(Server, RegType, Subject) of
+        {error, Reason} ->
+            {error, Reason};
+        {info, Data} ->
+            {info, Data};
+        _ -> %% not_exist ->
+            true
+    end.
 
 %% @doc Get the password of the user.
 -spec get_password(User :: ejabberd:user(),

@@ -155,7 +155,10 @@ process_unauthenticated_iq(Server,
 
 try_register(Phone, Email, Password, Nick, Server, Lang, IpAddress) ->
     case ejabberd_auth:check_phone_and_email(Phone, Email, Server) of
-        false -> {error, ?ERR_CONFLICT};
+        {error, _Reason} ->
+            {error, ?ERR_INTERNAL_SERVER_ERROR};
+        {info, _} ->
+            {error, ?ERR_CONFLICT};
         true ->
             case is_strong_password(Server, Password) of
                 true ->

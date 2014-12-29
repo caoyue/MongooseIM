@@ -51,7 +51,8 @@
          store_type/1,
          plain_password_required/0,
          activate_user/2,
-         phonelist_search/2
+         phonelist_search/2,
+         user_info_by_phone_or_email/3
         ]).
 
 -export([login/2, get_password/3]).
@@ -512,3 +513,38 @@ scram_passwords1(LServer, Count, Interval, ScramIterationCount) ->
 %% @doc Unimplemented gen_auth callbacks
 login(_User, _Server) -> erlang:error(not_implemented).
 get_password(_User, _Server, _DefaultValue) -> erlang:error(not_implemented).
+
+%% @doc get user information from users.
+user_info_by_phone_or_email(Server, Type, Subject) ->
+    LServer = jlib:nameprep(Server),
+    SSubject = ejabberd_odbc:escape(Subject),
+    case Type of
+        <<"phone">> ->
+            Sel = <<"select username, password, pass_details, email from users where cellphone='">>,
+            try ejabberd_odbc:sql_query(LServer, [Sel, SSubject, <<"';">>]) of
+                {selected, [<<"username">>, <<"password">>, <<"pass_details">>, <<"email">>],
+                    [{UserName, Password, PasswordDetails, EMail}]} ->
+                    {info,[{<<"username">>, UserName}, {<<"password">>, Password}, {<<"pass_details">>, PasswordDetails},
+                         {<<"email">>, EMail}]};
+                {selected, [<<"username">>, <<"password">>, <<"pass_details">>, <<"email">>], [] } ->
+                    not_exist;
+                {error, Error} ->
+                    {error, Error} %% Typical error is that table doesn't exist
+            catch
+                _:B -> {error, B} %% Typical error is database not accessible
+            end;
+        _ ->
+            Sel = <<"select username, password, pass_details,cellphone from users where email='">>,
+            try ejabberd_odbc:sql_query(LServer, [Sel, SSubject, <<"';">>]) of
+                {selected, [<<"username">>, <<"password">>, <<"pass_details">>, <<"cellphone">>],
+                    [{UserName, Password, PasswordDetails, Cellphone}]} ->
+                    {info, [{<<"username">>, UserName}, {<<"password">>, Password}, {<<"pass_details">>, PasswordDetails},
+                         {<<"phone">>, Cellphone}]};
+                {selected, [<<"username">>, <<"password">>, <<"pass_details">>,  <<"cellphone">>], [] } ->
+                    not_exist;
+                {error, Error} ->
+                    {error, Error} %% Typical error is that table doesn't exist
+            catch
+                _:B -> {error, B} %% Typical error is database not accessible
+            end
+    end.
