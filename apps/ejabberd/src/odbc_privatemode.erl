@@ -13,8 +13,8 @@
 -spec set_contact(ejabberd:lserver(), binary(), binary(), binary()) -> ok|{error, any()}.
 set_contact(LServer, UserName, ContactJid, Private) ->
     Query = [<<"update rosterusers set private ='">>, ejabberd_odbc:escape(Private),
-             <<"' where jid='">>, ejabberd_odbc:escape(ContactJid),
-             <<"' and username='">>, ejabberd_odbc:escape(UserName), <<"';">>],
+        <<"' where jid='">>, ejabberd_odbc:escape(ContactJid),
+        <<"' and username='">>, ejabberd_odbc:escape(UserName), <<"';">>],
     Result = ejabberd_odbc:sql_query(LServer, Query),
     case Result of
         {updated, 1} ->
@@ -26,8 +26,8 @@ set_contact(LServer, UserName, ContactJid, Private) ->
 -spec set_group(ejabberd:lserver(), binary(), binary(), binary()) -> ok|{error, any()}.
 set_group(LServer, UserJid, GroupId, Private) ->
     Query = [<<"update groupuser set private ='">>, ejabberd_odbc:escape(Private),
-             <<"' where jid='">>, ejabberd_odbc:escape(UserJid),
-             <<"' and groupid='">>, ejabberd_odbc:escape(GroupId), <<"';">>],
+        <<"' where jid='">>, ejabberd_odbc:escape(UserJid),
+        <<"' and groupid='">>, ejabberd_odbc:escape(GroupId), <<"';">>],
     Result = ejabberd_odbc:sql_query(LServer, Query),
     case Result of
         {updated, 1} ->
@@ -36,26 +36,12 @@ set_group(LServer, UserJid, GroupId, Private) ->
             {error, Error}
     end.
 
-set_password(LServer, UserJid, CurrentPassword) ->
-    case get_password(LServer, UserJid) of
-        {ok, []} ->
-            Query = [<<"insert into privatemode(jid,password) values('">>, ejabberd_odbc:escape(UserJid), <<"','">>,
-                     ejabberd_odbc:escape(CurrentPassword), <<"');">>],
-            case ejabberd_odbc:sql_query(LServer, Query) of
-                {updated, 1} ->
-                    ok;
-                Error ->
-                    {error, Error}
-            end;
-        {ok, [_]} ->
-            Query = [<<"update privatemode set password ='">>, ejabberd_odbc:escape(CurrentPassword),
-                     <<"' where jid='">>, ejabberd_odbc:escape(UserJid), <<"';">>],
-            case ejabberd_odbc:sql_query(LServer, Query) of
-                {updated, 1} ->
-                    ok;
-                Error ->
-                    {error, Error}
-            end;
+set_password(LServer, UserJid, Password) ->
+    Query = [<<"insert into privatemode(jid,password) values('">>, ejabberd_odbc:escape(UserJid), <<"','">>,
+        Password, <<"') on duplicate key update password = '">>, Password, <<"';">>],
+    case ejabberd_odbc:sql_query(LServer, Query) of
+        {updated, _} ->
+            ok;
         Error ->
             {error, Error}
     end.

@@ -26,7 +26,7 @@
 
 start(Host, _Opts) ->
     gen_iq_handler:add_iq_handler(ejabberd_sm, Host,
-                                  ?NS_PRIVATEMODE, ?MODULE, process_iq, no_queue).
+        ?NS_PRIVATEMODE, ?MODULE, process_iq, no_queue).
 
 stop(Host) ->
     gen_iq_handler:remove_iq_handler(ejabberd_sm, Host, ?NS_PRIVATEMODE).
@@ -98,12 +98,12 @@ multiple_resources_broadcast(LUser, LServer, ContactJid, Private, Mode) ->
     ToAttr = {<<"to">>, jlib:jid_to_binary(ToJid)},
     TypeAttr = {<<"type">>, <<"chat">>},
     Packet = {xmlel, <<"message">>, [],
-              [{xmlel, <<"push">>, [{<<"xmlns">>, ?NS_PRIVATEMODE}, {<<"type">>, <<"privatemode">>},
-                                    {<<"mode">>, Mode}, {<<"subject">>, ContactJid}, {<<"private">>, Private}],
-                [{xmlcdata, <<>>}]}
-              ]},
+        [{xmlel, <<"push">>, [{<<"xmlns">>, ?NS_PRIVATEMODE}, {<<"type">>, <<"privatemode">>},
+            {<<"mode">>, Mode}, {<<"subject">>, ContactJid}, {<<"private">>, Private}],
+            [{xmlcdata, <<>>}]}
+        ]},
     ejabberd_router:route(FromJid, ToJid,
-                          Packet#xmlel{attrs = [ToAttr, TypeAttr, LangAttr]}).
+        Packet#xmlel{attrs = [ToAttr, TypeAttr, LangAttr]}).
 
 %% @doc set privatemode password
 set_password(From, _To, #iq{sub_el = SubEl} = IQ) ->
@@ -114,12 +114,13 @@ set_password(From, _To, #iq{sub_el = SubEl} = IQ) ->
         false ->
             IQ#iq{type = error, sub_el = [SubEl, make_error_reply(<<"password incorrect">>)]};
         _ ->
-            CurrentPassword = get_password_SubEl(SubEl, <<"password">>),
-            case CurrentPassword of
+            NewPassword = get_password_SubEl(SubEl, <<"password">>),
+            case NewPassword of
                 not_exists ->
                     IQ#iq{type = error, sub_el = [SubEl, make_error_reply(<<"password not exists">>)]};
                 _ ->
-                    case odbc_privatemode:set_password(LServer, FromJid, CurrentPassword) of
+                    PreparedPassword = password_to_scram(NewPassword),
+                    case odbc_privatemode:set_password(LServer, FromJid, PreparedPassword) of
                         ok ->
                             IQ#iq{type = result, sub_el = [SubEl]};
                         _ ->
@@ -132,8 +133,8 @@ set_password(From, _To, #iq{sub_el = SubEl} = IQ) ->
 privatemode_login(From, _To, #iq{sub_el = SubEl} = IQ) ->
     #jid{luser = LUser, lserver = LServer} = From,
     FromJid = jlib:jid_to_binary({LUser, LServer, <<>>}),
-    CurrentPassword = get_password_SubEl(SubEl, <<"password">>),
-    case is_password_correct(LServer, FromJid, CurrentPassword) of
+    Password = get_password_SubEl(SubEl, <<"password">>),
+    case is_password_correct(LServer, FromJid, Password) of
         true ->
             IQ#iq{type = result, sub_el = [SubEl]};
         not_set ->
@@ -144,8 +145,11 @@ privatemode_login(From, _To, #iq{sub_el = SubEl} = IQ) ->
 
 is_password_correct(LServer, Jid, Password) ->
     case odbc_privatemode:get_password(LServer, Jid) of
-        {ok, [{Password}]} ->
-            true;
+        {ok, [{PassDetails}]} ->
+            case check_password_scram(Password, PassDetails) of
+                true -> true;
+                _ -> false
+            end;
         {ok, []} ->
             not_set;
         _ ->
@@ -154,9 +158,9 @@ is_password_correct(LServer, Jid, Password) ->
 
 make_error_reply(Error) ->
     #xmlel{name = <<"error">>
-          , attrs = []
-          , children = [{xmlcdata, Error}]
-          }.
+        , attrs = []
+        , children = [{xmlcdata, Error}]
+    }.
 
 get_password_SubEl(SubEl, TagName) ->
     Tag = xml:get_subtag(SubEl, TagName),
@@ -165,6 +169,23 @@ get_password_SubEl(SubEl, TagName) ->
             not_exists;
         _ ->
             xml:get_tag_cdata(Tag)
+    end.
+
+password_to_scram(Password) ->
+    Scram = scram:password_to_scram(Password, 4096),
+    case scram:serialize(Scram) of
+        {error, _} ->
+            false;
+        PassDetails ->
+            ejabberd_odbc:escape(PassDetails)
+    end.
+
+check_password_scram(Password, PassDetails) ->
+    case scram:deserialize(PassDetails) of
+        {ok, #scram{} = Scram} ->
+            scram:check_password(Password, Scram);
+        _ ->
+            false %% Password is not correct
     end.
 
 is_query(Packet) ->
