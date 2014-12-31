@@ -581,11 +581,22 @@ process_subscription(Direction, User, Server, JID1, Type, Reason, Nick) ->
                                                   Item#roster.ask,
                                                   Type)
                             end,
-                {Name, AskMessage} = case NewState of
-                                 {_, both} -> {Nick, Reason};
-                                 {_, in}   -> {Nick, Reason};
-                                 _         -> {<<>>, <<>>}
-                             end,
+                Name = case Direction of
+                           out ->Item#roster.name;
+                           in ->
+                               if
+                                   Nick /= <<>> ->
+                                       Nick;
+                                   true ->
+                                       Item#roster.name
+                               end
+
+                       end,
+                AskMessage = case NewState of
+                         {_, both} -> Reason;
+                         {_, in}   -> Reason;
+                         _         -> <<>>
+                         end,
                 case NewState of
                     none ->
                         {none, AutoReply};
