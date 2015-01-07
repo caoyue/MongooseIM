@@ -38,6 +38,8 @@ process_iq(From, To, #iq{xmlns = ?NS_PUSH_SERVICE, type = _Type, sub_el = SubEl}
                     add(From, To, IQ);
                 <<"remove">> ->
                     remove(From, To, IQ);
+                <<"test">> ->
+                    push_test(From, To, IQ);
                 _ ->
                     IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
             end;
@@ -93,3 +95,7 @@ is_query_groupchat(Packet) ->
         #xmlel{name = <<"query">>} -> true;
         _ -> false
     end.
+
+push_test(_From, _To, #iq{sub_el = SubEl} = IQ) ->
+    mod_push_service_ios:send_test(<<"Hello, welcome to use kissnapp!">>),
+    IQ#iq{type = result, sub_el = [SubEl]}.

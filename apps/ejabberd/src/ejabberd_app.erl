@@ -70,6 +70,9 @@ start(normal, _Args) ->
     start_modules(),
     ejabberd_listener:start_listeners(),
     ejabberd_admin:start(),
+
+    ssl:start(),
+    apns:start(),
     ?INFO_MSG("ejabberd ~s is started in the node ~p", [?VERSION, node()]),
     Sup;
 start(_, _) ->

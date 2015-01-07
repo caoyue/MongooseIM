@@ -3,18 +3,18 @@
 -behaviour(gen_mod).
 
 -export([start/2,
-         init/2,
-         stop/1,
-         send_notification/3]).
+    init/2,
+    stop/1]).
 
--define(PROCNAME, ?MODULE).
+-export([send_notification/3]).
 
 -include("ejabberd.hrl").
 -include("jlib.hrl").
+-include("mod_push_service.hrl").
 
 start(Host, Opts) ->
-    ?INFO_MSG("Starting mod_offline_post", []),
-    register(?PROCNAME, spawn(?MODULE, init, [Host, Opts])),
+    ?INFO_MSG("Starting mod_push_service", []),
+    register(?MODULE, spawn(?MODULE, init, [Host, Opts])),
     ok.
 
 init(Host, _Opts) ->
@@ -24,13 +24,44 @@ init(Host, _Opts) ->
     ok.
 
 stop(Host) ->
-    ?INFO_MSG("Stopping mod_offline_post", []),
+    ?INFO_MSG("Stopping mod_push_service", []),
     ejabberd_hooks:delete(offline_message_hook, Host,
-                          ?MODULE, send_notification, 10),
+        ?MODULE, send_notification, 10),
     ok.
 
+-spec send_notification(
+    From :: jlib:jid(),
+    ToJid :: jlib:jid(),
+    Packet :: jlib:xmlel()) -> ok.
 send_notification(From, To, Packet) ->
-    ok.
+    #jid{luser = LUser, lserver = LServer} = To,
+    ToJid = jlib:jid_to_binary({LUser, LServer, <<>>}),
+    #jid{luser = LUserFrom, lserver = LServerFrom} = From,
+    FromJid = jlib:jid_to_binary({LUserFrom, LServerFrom, <<>>}),
+    case odbc_push_service:get_tokens_by_jid(LServer, ToJid) of
+        {ok, PushTokenList} ->
+            lists:foreach(fun(PushToken) ->
+                send_notification(PushToken, create_notification_content(FromJid, ToJid, Packet))
+            end, PushTokenList);
+        {error, _} ->
+            none
+    end.
 
-create_notification() ->
-    {alert, [{<<"test">>}]}.
+-spec send_notification(#push_token{}, Content :: binary()) -> {ok | not_implement}.
+send_notification(#push_token{type = PushType, token = DeviceToken}, Content) ->
+    case PushType of
+        1 -> %% iOS push notification
+            mod_push_service_ios:send(DeviceToken, Content);
+        _ -> %% Android or other
+            not_implement
+    end.
+
+-spec create_notification_content(FromJid :: binary(),
+    ToJid :: binary(),
+    Packet :: jlib:xmlel()) -> ok.
+create_notification_content(FromJid, ToJid, Packet) ->
+    <<"Hello, welcome to use kissnapp!">>.
+
+get_content_from_message(Packet) ->
+    not_implement.
+

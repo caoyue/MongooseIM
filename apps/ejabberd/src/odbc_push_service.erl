@@ -1,7 +1,7 @@
 -module(odbc_push_service).
 
 %% API
--export([add/2, remove/2]).
+-export([add/2, remove/2, get_tokens_by_jid/2]).
 
 
 -include("jlib.hrl").
@@ -28,3 +28,17 @@ remove(LServer, TokenRecord) ->
         Error ->
             {error, Error}
     end.
+
+get_tokens_by_jid(LServer, UserJid) ->
+    Query = [<<"select jid,token,push_type from push_service where jid = '">>, ejabberd_odbc:escape(UserJid), <<"';">>],
+    case ejabberd_odbc:sql_query(LServer, Query) of
+        {selected, [<<"jid">>, <<"token">>, <<"push_type">>], Rs} when is_list(Rs) ->
+            PushTokenList = lists:map(fun result_to_record/1, Rs),
+            {ok, PushTokenList};
+        Error ->
+            {error, Error}
+    end.
+
+result_to_record(Result) ->
+    {Jid, Token, PushType} = Result,
+    #push_token{jid = Jid, token = Token, type = PushType}.
