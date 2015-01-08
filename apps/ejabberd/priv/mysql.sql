@@ -352,3 +352,4 @@ CREATE TABLE push_service (
     last_login timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) CHARACTER SET utf8;
 CREATE INDEX push_jid_index ON push_service (jid);
+CREATE INDEX push_token_index ON push_service (token);

@@ -31,15 +31,13 @@ stop(Host) ->
 %%%===================================================================
 
 process_iq(From, To, #iq{xmlns = ?NS_PUSH_SERVICE, type = _Type, sub_el = SubEl} = IQ) ->
-    case is_query_groupchat(SubEl) of
+    case is_query(SubEl) of
         true ->
             case xml:get_tag_attr_s(<<"query_type">>, SubEl) of
                 <<"add">> ->
                     add(From, To, IQ);
                 <<"remove">> ->
                     remove(From, To, IQ);
-                <<"test">> ->
-                    push_test(From, To, IQ);
                 _ ->
                     IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
             end;
@@ -72,8 +70,8 @@ add(From, _To, #iq{sub_el = SubEl} = IQ) ->
 remove(From, _To, #iq{sub_el = SubEl} = IQ) ->
     #jid{luser = LUser, lserver = LServer} = From,
     UserJid = jlib:jid_to_binary({LUser, LServer, <<>>}),
-    Token = get_token(SubEl, UserJid),
-    case odbc_push_service:remove(LServer, Token) of
+    TokenRecord = get_token(SubEl, UserJid),
+    case odbc_push_service:remove(LServer, TokenRecord#push_token.token) of
         ok ->
             IQ#iq{type = result, sub_el = [SubEl]};
         _ ->
@@ -90,12 +88,8 @@ get_token(SubEl, UserJid) ->
                 type = binary_to_integer(xml:get_tag_attr_s(<<"type">>, Tag))}
     end.
 
-is_query_groupchat(Packet) ->
+is_query(Packet) ->
     case Packet of
         #xmlel{name = <<"query">>} -> true;
         _ -> false
     end.
-
-push_test(_From, _To, #iq{sub_el = SubEl} = IQ) ->
-    mod_push_service_ios:send_test(<<"Hello, welcome to use kissnapp!">>),
-    IQ#iq{type = result, sub_el = [SubEl]}.

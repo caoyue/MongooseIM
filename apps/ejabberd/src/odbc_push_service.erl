@@ -18,10 +18,8 @@ add(LServer, TokenRecord) ->
             {error, Error}
     end.
 
-remove(LServer, TokenRecord) ->
-    #push_token{jid = UserJid, token = Token, type = _PushType} = TokenRecord,
-    Query = [<<"delete from push_service where jid = '">>, ejabberd_odbc:escape(UserJid), <<"' and token = '">>,
-        ejabberd_odbc:escape(Token), <<"';">>],
+remove(LServer, DeviceToken) ->
+    Query = [<<"delete from push_service where token = '">>, ejabberd_odbc:escape(DeviceToken), <<"';">>],
     case ejabberd_odbc:sql_query(LServer, Query) of
         {updated, 1} ->
             ok;
@@ -30,7 +28,7 @@ remove(LServer, TokenRecord) ->
     end.
 
 get_tokens_by_jid(LServer, UserJid) ->
-    Query = [<<"select jid,token,push_type from push_service where jid = '">>, ejabberd_odbc:escape(UserJid), <<"';">>],
+    Query = [<<"select jid, token, push_type from push_service where jid = '">>, ejabberd_odbc:escape(UserJid), <<"';">>],
     case ejabberd_odbc:sql_query(LServer, Query) of
         {selected, [<<"jid">>, <<"token">>, <<"push_type">>], Rs} when is_list(Rs) ->
             PushTokenList = lists:map(fun result_to_record/1, Rs),
@@ -39,6 +37,5 @@ get_tokens_by_jid(LServer, UserJid) ->
             {error, Error}
     end.
 
-result_to_record(Result) ->
-    {Jid, Token, PushType} = Result,
+result_to_record({Jid, Token, PushType}) ->
     #push_token{jid = Jid, token = Token, type = PushType}.

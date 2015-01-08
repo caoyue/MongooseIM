@@ -39,7 +39,7 @@ send_notification(From, To, Packet) ->
     #jid{luser = LUserFrom, lserver = LServerFrom} = From,
     FromJid = jlib:jid_to_binary({LUserFrom, LServerFrom, <<>>}),
     case odbc_push_service:get_tokens_by_jid(LServer, ToJid) of
-        {ok, PushTokenList} ->
+        {ok, [_ | _] = PushTokenList} ->
             lists:foreach(fun(PushToken) ->
                 send_notification(PushToken, create_notification_content(FromJid, ToJid, Packet))
             end, PushTokenList);
@@ -50,18 +50,21 @@ send_notification(From, To, Packet) ->
 -spec send_notification(#push_token{}, Content :: binary()) -> {ok | not_implement}.
 send_notification(#push_token{type = PushType, token = DeviceToken}, Content) ->
     case PushType of
-        1 -> %% iOS push notification
-            mod_push_service_ios:send(DeviceToken, Content);
+        <<"1">> -> %% iOS push notification
+            mod_push_service_ios:send(binary_to_list(DeviceToken), Content);
         _ -> %% Android or other
             not_implement
     end.
 
 -spec create_notification_content(FromJid :: binary(),
     ToJid :: binary(),
-    Packet :: jlib:xmlel()) -> ok.
-create_notification_content(FromJid, ToJid, Packet) ->
-    <<"Hello, welcome to use kissnapp!">>.
-
-get_content_from_message(Packet) ->
-    not_implement.
+    _Packet :: jlib:xmlel()) -> ok.
+create_notification_content(FromJid, ToJid, _Packet) ->
+    %TODO
+    #push_message{
+        type = 1,
+        content = <<"Hello, welcome to use kissnapp!">>,
+        from = FromJid,
+        to = ToJid
+    }.
 

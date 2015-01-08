@@ -1,6 +1,6 @@
 -module(mod_push_service_ios).
 
--export([send/1, send/2, send_test/1]).
+-export([send/1, send/2]).
 
 %% define
 -define(APNS_NAME, kissnapp_push).
@@ -8,7 +8,7 @@
     apple_host = "gateway.sandbox.push.apple.com",
     apple_port = 2195,
     cert = undefined,
-    cert_file = "priv/cert.pem",
+    cert_file = "priv/kissnapp.pem",
     key = undefined,
     key_file = undefined,
     cert_password = undefined,
@@ -19,6 +19,7 @@
     feedback_fun = fun handle_apns_delete_subscription/1,
     feedback_timeout = 30 * 60 * 1000
 }).
+-define(LSERVER, <<"localhost">>).
 
 -include_lib("apns/include/apns.hrl").
 
@@ -31,26 +32,32 @@ send(Msg) ->
     connect(),
     apns:send_message(?APNS_NAME, Msg).
 
--spec send(DeviceToken :: binary(), Content :: binary()) -> ok.
+-spec send(DeviceToken :: string(), Content :: binary()) -> ok.
 send(DeviceToken, Content) ->
     send(create_notification(DeviceToken, Content)).
 
--spec send_test(Content :: binary()) -> ok.
-send_test(Content) ->
-    TestToken = <<"ff496f96352abb7c875bedfc755287f0bf72e14bfadade9ff6ba75360de65441">>,
-    send(TestToken, Content).
+handle_apns_error(_MsgId, _Status) ->
+    %error_logger:error_msg("error: ~p - ~p~n", [MsgId, Status]).
+    none.
 
-handle_apns_error(MsgId, Status) ->
-    error_logger:error_msg("error: ~p - ~p~n", [MsgId, Status]).
 
+%% @doc delete token records when APNs feedback
 handle_apns_delete_subscription(Data) ->
-    error_logger:info_msg("delete subscription: ~p~n", [Data]).
+    error_logger:info_msg("delete subscription: ~p~n", [Data]),
+    case Data of
+        [_ | _] ->
+            lists:foreach(fun(X) ->
+                odbc_push_service:remove(?LSERVER, X)
+            end, Data);
+        _ ->
+            none
+    end.
 
-%% =========================
-%% function
-%% =========================
+%% ===========================================
+%% functions
+%% ===========================================
 
--spec create_notification(Token :: binary(),
+-spec create_notification(DeviceToken :: string(),
     Content :: binary()) -> ok.
 create_notification(DeviceToken, Content) ->
     #apns_msg{
