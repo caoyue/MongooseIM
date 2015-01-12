@@ -6,7 +6,7 @@
     init/2,
     stop/1]).
 
--export([send_notification/3]).
+-export([send_notification/3, get_host_server/0]).
 
 -include("ejabberd.hrl").
 -include("jlib.hrl").
@@ -18,8 +18,6 @@ start(Host, Opts) ->
     ok.
 
 init(Host, _Opts) ->
-    inets:start(),
-    ssl:start(),
     ejabberd_hooks:add(offline_message_hook, Host, ?MODULE, send_notification, 10),
     ok.
 
@@ -68,3 +66,10 @@ create_notification_content(FromJid, ToJid, _Packet) ->
         to = ToJid
     }.
 
+get_host_server() ->
+    case ejabberd_config:get_global_option(hosts) of
+        [Host | _] ->
+            Host;
+        _ ->
+            <<"localhost">>
+    end.
