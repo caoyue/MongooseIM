@@ -348,8 +348,8 @@ CREATE TABLE push_service (
     id int PRIMARY KEY NOT NULL auto_increment,
     jid varchar(250) CHARACTER SET binary NOT NULL,
     token varchar(250) CHARACTER SET binary NOT NULL,
-    push_type tinyint NOT NULL,
+    push_type tinyint unsigned NOT NULL,
     last_login timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) CHARACTER SET utf8;
 CREATE INDEX push_jid_index ON push_service (jid);
-CREATE INDEX push_token_index ON push_service (token);
+CREATE UNIQUE INDEX push_token_index ON push_service (token);

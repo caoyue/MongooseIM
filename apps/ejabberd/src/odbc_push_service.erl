@@ -9,10 +9,14 @@
 
 add(LServer, TokenRecord) ->
     #push_token{jid = UserJid, token = Token, type = PushType} = TokenRecord,
-    Query = [<<"insert into push_service (jid, token, push_type) values ('">>, ejabberd_odbc:escape(UserJid), <<"','">>,
-        ejabberd_odbc:escape(Token), <<"',">>, integer_to_list(PushType), <<");">>],
+    EJid = ejabberd_odbc:escape(UserJid),
+    IType = integer_to_list(PushType),
+    Query = [<<"insert into push_service (jid, token, push_type) values ('">>,
+        EJid, <<"','">>, ejabberd_odbc:escape(Token), <<"',">>,
+        IType, <<") on duplicate key update jid = '">>, EJid,
+        <<"', push_type = ">>, IType, <<", last_login = NOW();">>],
     case ejabberd_odbc:sql_query(LServer, Query) of
-        {updated, 1} ->
+        {updated, _} ->
             ok;
         Error ->
             {error, Error}

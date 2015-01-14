@@ -165,24 +165,25 @@ make_push_message(#push_message{
                                      GroupName = get_group_name(LServer, GroupId),
                                      {get_group_nick(LServer, FromJid, GroupId), <<"[", GroupName/binary, "]">>}
                              end,
+    HeadTitle = <<GroupTitle/binary, NickName/binary>>,
     case MessageType of
         text ->
             case Content of
                 undefined ->
-                    <<GroupTitle/binary, NickName/binary, " send a message to you">>;
+                    <<HeadTitle/binary, " send a message to you">>;
                 _ ->
-                    <<GroupTitle/binary, NickName/binary, ": ", Content/binary>>
+                    <<HeadTitle/binary, ": ", Content/binary>>
             end;
         audio ->
-            <<GroupTitle/binary, NickName/binary, " send an audio to you">>;
+            <<HeadTitle/binary, " send an audio to you">>;
         video ->
-            <<GroupTitle/binary, NickName/binary, " send a video to you">>;
+            <<HeadTitle/binary, " send a video to you">>;
         picture ->
-            <<GroupTitle/binary, NickName/binary, " send a photo to you">>;
+            <<HeadTitle/binary, " send a photo to you">>;
         location ->
-            <<GroupTitle/binary, NickName/binary, " send location to you">>;
+            <<HeadTitle/binary, " send location to you">>;
         _ ->
-            <<GroupTitle/binary, NickName/binary, " send a message to you">>
+            <<HeadTitle/binary, " send a message to you">>
     end.
 
 -spec get_roster_nick(LServer :: binary(), FromJid :: binary(), ToJid :: binary()) -> binary().
