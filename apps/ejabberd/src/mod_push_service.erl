@@ -247,8 +247,7 @@ message_substring(Content) ->
 
 -spec translate(Lang :: ejabberd:lang(), Text :: binary()) -> binary().
 translate(Lang, Text) ->
-    T = translate:translate(Lang, binary_to_list(Text)),
-    unicode:characters_to_binary(T).
+    list_to_binary(translate:translate(Lang, Text)).
 
 get_host_server() ->
     case ejabberd_config:get_global_option(hosts) of

@@ -28,9 +28,9 @@
 -author('alexey@process-one.net').
 
 -export([start/0,
-         load_dir/1,
-         load_file/2,
-         translate/2]).
+    load_dir/1,
+    load_file/2,
+    translate/2]).
 
 -include("ejabberd.hrl").
 
@@ -53,31 +53,31 @@ start() ->
     ok.
 
 
--spec load_dir(file:name()) -> 'ok' | {'error','lager_not_running'}.
+-spec load_dir(file:name()) -> 'ok' | {'error', 'lager_not_running'}.
 load_dir(Dir) ->
     case file:list_dir(Dir) of
         {ok, Files} ->
             MsgFiles = lists:filter(
-                         fun(FN) ->
-                                 case string:len(FN) > 4 of
-                                     true ->
-                                         string:substr(
-                                           FN,
-                                           string:len(FN) - 3) == ".msg";
-                                     _ ->
-                                         false
-                                 end
-                         end, Files),
+                fun(FN) ->
+                    case string:len(FN) > 4 of
+                        true ->
+                            string:substr(
+                                FN,
+                                string:len(FN) - 3) == ".msg";
+                        _ ->
+                            false
+                    end
+                end, Files),
             lists:foreach(
-              fun(FN) ->
-                      LP = ascii_tolower(
-                             string:substr(FN, 1, string:len(FN) - 4)),
-                      L = case string:tokens(LP, ".") of
-                              [Language] -> Language;
-                              [Language, _Project] -> Language
-                          end,
-                      load_file(L, Dir ++ "/" ++ FN)
-              end, MsgFiles),
+                fun(FN) ->
+                    LP = ascii_tolower(
+                        string:substr(FN, 1, string:len(FN) - 4)),
+                    L = case string:tokens(LP, ".") of
+                            [Language] -> Language;
+                            [Language, _Project] -> Language
+                        end,
+                    load_file(L, Dir ++ "/" ++ FN)
+                end, MsgFiles),
             ok;
         {error, Reason} ->
             ?ERROR_MSG("~p", [Reason])
@@ -89,19 +89,19 @@ load_file(Lang, File) ->
     case file:consult(File) of
         {ok, Terms} ->
             lists:foreach(fun({Orig, Trans}) ->
-                                  Trans1 = case Trans of
-                                               "" ->
-                                                   Orig;
-                                               _ ->
-                                                   Trans
-                                           end,
-                                  ets:insert(translations,
-                                             {{Lang, Orig}, Trans1})
-                          end, Terms);
-        %% Code copied from ejabberd_config.erl
+                Trans1 = case Trans of
+                             "" ->
+                                 Orig;
+                             _ ->
+                                 Trans
+                         end,
+                ets:insert(translations,
+                    {{Lang, Orig}, unicode_convert(Trans1)})
+            end, Terms);
+    %% Code copied from ejabberd_config.erl
         {error, {_LineNumber, erl_parse, _ParseMessage} = Reason} ->
             ExitText = lists:flatten(File ++ " approximately in the line "
-                                     ++ file:format_error(Reason)),
+                ++ file:format_error(Reason)),
             ?ERROR_MSG("Problem loading translation file ~n~s", [ExitText]),
             exit(ExitText);
         {error, Reason} ->
@@ -116,7 +116,11 @@ translate(Lang, Msg) when is_binary(Lang) ->
     translate(binary:bin_to_list(Lang), Msg);
 translate(Lang, Msg) ->
     LLang = ascii_tolower(Lang),
-    case ets:lookup(translations, {LLang, Msg}) of
+    LMsg = case is_binary(Msg) of
+               true -> unicode:characters_to_list(Msg);
+               false -> Msg
+           end,
+    case ets:lookup(translations, {LLang, LMsg}) of
         [{_, Trans}] ->
             Trans;
         _ ->
@@ -186,3 +190,6 @@ ascii_tolower([C | Cs]) ->
 ascii_tolower([]) ->
     [].
 
+-spec unicode_convert(Unicode::string()) -> string().
+unicode_convert(Unicode) ->
+    binary_to_list(unicode:characters_to_binary(Unicode)).
