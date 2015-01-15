@@ -1,5 +1,14 @@
+%%%===================================================================
+%%% @doc Implement Apple Push Notification Service (APNs)
+%%% fetures:
+%%% 1.Send notification to iOS device
+%%% 2.Log error on fail
+%%% 3.Get feedbck from apns and remove token record from server
+%%%===================================================================
+
 -module(mod_push_service_ios).
 
+%% exports
 -export([send/1, send/2]).
 
 %% Define
@@ -7,6 +16,11 @@
 
 -include("mod_push_service.hrl").
 -include_lib("apns/include/apns.hrl").
+
+
+%%%===================================================================
+%%% Functions
+%%%===================================================================
 
 -spec connect() -> {ok, pid()} | {error, {already_started, pid()}} | {error, Reason :: term()}.
 connect() ->
@@ -25,7 +39,7 @@ send(Msg) ->
             error_logger:error_msg("error: ~p ~n", [Reason])
     end.
 
--spec send(DeviceToken :: string(), Content :: binary()) -> ok.
+-spec send(DeviceToken :: binary(), Content :: binary()) -> ok.
 send(DeviceToken, Content) ->
     send(create_notification(DeviceToken, Content)).
 
@@ -44,11 +58,7 @@ handle_apns_delete_subscription(Data) ->
             none
     end.
 
-%% ===========================================
-%% Functions
-%% ===========================================
-
--spec create_notification(DeviceToken :: string(),
+-spec create_notification(DeviceToken :: binary(),
     Content :: binary()) -> ok.
 create_notification(DeviceToken, Content) ->
     #apns_msg{
@@ -56,5 +66,5 @@ create_notification(DeviceToken, Content) ->
         badge = 1,
         sound = "chime",
         expiry = apns:expiry(86400),
-        device_token = DeviceToken
+        device_token = binary_to_list(DeviceToken)
     }.

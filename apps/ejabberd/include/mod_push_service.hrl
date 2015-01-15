@@ -11,6 +11,7 @@
 }).
 
 -record(push_message, {
+    lang :: ejabberd:lang(),
     lserver :: binary(),
     fromuser :: binary(),
     fromjid :: binary(),

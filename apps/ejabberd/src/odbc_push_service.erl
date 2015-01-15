@@ -7,10 +7,9 @@
 -include("jlib.hrl").
 -include("mod_push_service.hrl").
 
-add(LServer, TokenRecord) ->
-    #push_token{jid = UserJid, token = Token, type = PushType} = TokenRecord,
+add(LServer, #push_token{jid = UserJid, token = Token, type = PushType}) ->
     EJid = ejabberd_odbc:escape(UserJid),
-    IType = integer_to_list(PushType),
+    IType = integer_to_binary(PushType),
     Query = [<<"insert into push_service (jid, token, push_type) values ('">>,
         EJid, <<"','">>, ejabberd_odbc:escape(Token), <<"',">>,
         IType, <<") on duplicate key update jid = '">>, EJid,
@@ -48,8 +47,8 @@ get_roster_nick(LServer, FromJid, ToUser) ->
     Query = [<<"select nick from rosterusers where jid = '">>, ejabberd_odbc:escape(FromJid),
         <<"' and username = '">>, ejabberd_odbc:escape(ToUser), <<"';">>],
     case ejabberd_odbc:sql_query(LServer, Query) of
-        {selected, [<<"nick">>], [{NickName}]} ->
-            {ok, NickName};
+        {selected, [<<"nick">>], [{Nickname}]} ->
+            {ok, Nickname};
         Error ->
             {error, Error}
     end.
@@ -58,8 +57,8 @@ get_group_nick(LServer, FromJid, GroupId) ->
     Query = [<<"select nickname from groupuser where jid = '">>, ejabberd_odbc:escape(FromJid),
         <<"' and groupid = '">>, ejabberd_odbc:escape(GroupId), <<"';">>],
     case ejabberd_odbc:sql_query(LServer, Query) of
-        {selected, [<<"nickname">>], [{NickName}]} ->
-            {ok, NickName};
+        {selected, [<<"nickname">>], [{Nickname}]} ->
+            {ok, Nickname};
         Error ->
             {error, Error}
     end.
