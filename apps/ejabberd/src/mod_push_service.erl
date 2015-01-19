@@ -195,21 +195,21 @@ make_push_message(#push_message{
                    text ->
                        case Content of
                            undefined ->
-                               translate(Lang, <<" send a message to you">>);
+                               translate(Lang, " send a message to you");
                            _ ->
                                SubContent = message_substring(Content),
                                <<": ", SubContent/binary>>
                        end;
                    audio ->
-                       translate(Lang, <<" send an audio to you">>);
+                       translate(Lang, " send an audio to you");
                    video ->
-                       translate(Lang, <<" send a video to you">>);
+                       translate(Lang, " send a video to you");
                    picture ->
-                       translate(Lang, <<" send a picture to you">>);
+                       translate(Lang, " send a picture to you");
                    location ->
-                       translate(Lang, <<" share location with you">>);
+                       translate(Lang, " share location with you");
                    _ ->
-                       translate(Lang, <<" send a message to you">>)
+                       translate(Lang, " send a message to you")
                end,
     <<GroupTitle/binary, Nickname/binary, TMessage/binary>>.
 
@@ -217,21 +217,21 @@ make_push_message(#push_message{
 get_roster_nick(Lang, LServer, FromJid, ToUser) ->
     case odbc_push_service:get_roster_nick(LServer, FromJid, ToUser) of
         {ok, Name} -> Name;
-        _ -> translate(Lang, <<"unknow">>)
+        _ -> translate(Lang, "unknow")
     end.
 
 -spec get_group_nick(Lang :: ejabberd:lang(), LServer :: binary(), ToJid :: binary(), GroupId :: binary()) -> binary().
 get_group_nick(Lang, LServer, FromJid, GroupId) ->
     case odbc_push_service:get_group_nick(LServer, FromJid, GroupId) of
         {ok, Name} -> Name;
-        _ -> translate(Lang, <<"unknow">>)
+        _ -> translate(Lang, "unknow")
     end.
 
 -spec get_group_name(Lang :: ejabberd:lang(), LServer :: binary(), GroupId :: binary()) -> binary().
 get_group_name(Lang, LServer, GroupId) ->
     case odbc_push_service:get_group_name(LServer, GroupId) of
         {ok, Name} -> Name;
-        _ -> translate(Lang, <<"unknow">>)
+        _ -> translate(Lang, "unknow")
     end.
 
 -spec message_substring(Content :: binary()) -> binary().

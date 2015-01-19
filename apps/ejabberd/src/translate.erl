@@ -116,11 +116,7 @@ translate(Lang, Msg) when is_binary(Lang) ->
     translate(binary:bin_to_list(Lang), Msg);
 translate(Lang, Msg) ->
     LLang = ascii_tolower(Lang),
-    LMsg = case is_binary(Msg) of
-               true -> unicode:characters_to_list(Msg);
-               false -> Msg
-           end,
-    case ets:lookup(translations, {LLang, LMsg}) of
+    case ets:lookup(translations, {LLang, Msg}) of
         [{_, Trans}] ->
             Trans;
         _ ->

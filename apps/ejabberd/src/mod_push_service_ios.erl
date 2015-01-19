@@ -15,7 +15,7 @@
 -define(APNS_NAME, kissnapp_push).
 
 -include("mod_push_service.hrl").
--include_lib("apns/include/apns.hrl").
+-include("mod_apns.hrl").
 
 
 %%%===================================================================
@@ -24,7 +24,7 @@
 
 -spec connect() -> {ok, pid()} | {error, {already_started, pid()}} | {error, Reason :: term()}.
 connect() ->
-    apns:connect(?APNS_NAME,
+    mod_apns:connect(?APNS_NAME,
         fun handle_apns_error/2,
         fun handle_apns_delete_subscription/1).
 
@@ -32,9 +32,9 @@ connect() ->
 send(Msg) ->
     case connect() of
         {ok, _} ->
-            apns:send_message(?APNS_NAME, Msg);
+            mod_apns:send_message(?APNS_NAME, Msg);
         {error, {already_started, _}} ->
-            apns:send_message(?APNS_NAME, Msg);
+            mod_apns:send_message(?APNS_NAME, Msg);
         {error, Reason} ->
             error_logger:error_msg("error: ~p ~n", [Reason])
     end.
@@ -65,6 +65,6 @@ create_notification(DeviceToken, Content) ->
         alert = Content,
         badge = 1,
         sound = "chime",
-        expiry = apns:expiry(86400),
+        expiry = mod_apns:expiry(86400),
         device_token = binary_to_list(DeviceToken)
     }.
