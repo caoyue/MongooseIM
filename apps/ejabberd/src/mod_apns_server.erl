@@ -269,8 +269,9 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 %% ===================================================================
 
 build_payload(Params, Extra, Content_Available) ->
-    jiffy:encode(
-        {[{<<"aps">>, do_build_payload(Params, Content_Available)} | Extra]}).
+    {Payload} = do_build_payload(Params, Content_Available),
+    Struct = {struct, [{<<"aps">>, {struct, Payload}} | Extra]},
+    list_to_binary(mochijson2:encode(Struct)).
 
 do_build_payload(Params, Content_Available) when Content_Available ->
     do_build_payload(Params, [{<<"content-available">>, 1}]);
