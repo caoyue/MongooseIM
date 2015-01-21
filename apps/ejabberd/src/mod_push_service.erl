@@ -130,7 +130,9 @@ extract_message(From, To, Packet) ->
                                           tojid = ToJid,
                                           groupid = undefined,
                                           content = undefined
-                                      }
+                                      };
+                                  _ ->
+                                      not_valid_message
                               end,
                     case Message of
                         not_valid_message -> not_valid_message;
