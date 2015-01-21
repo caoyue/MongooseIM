@@ -59,33 +59,47 @@ add(From, _To, #iq{sub_el = SubEl} = IQ) ->
     #jid{luser = LUser, lserver = LServer} = From,
     UserJid = jlib:jid_to_binary({LUser, LServer, <<>>}),
     TokenRecord = get_token(SubEl, UserJid),
-    case odbc_push_service:add(LServer, TokenRecord) of
-        ok ->
-            IQ#iq{type = result, sub_el = [SubEl]};
-        _ ->
-            IQ#iq{type = error, sub_el = [SubEl]}
+    case get_token(SubEl, UserJid) of
+        not_valid_token ->
+            IQ#iq{type = error, sub_el = [SubEl]};
+        TokenRecord ->
+            case odbc_push_service:add(LServer, TokenRecord) of
+                ok ->
+                    IQ#iq{type = result, sub_el = [SubEl]};
+                _ ->
+                    IQ#iq{type = error, sub_el = [SubEl]}
+            end
     end.
 
 %% @doc remove a record of user push notification config
 remove(From, _To, #iq{sub_el = SubEl} = IQ) ->
     #jid{luser = LUser, lserver = LServer} = From,
     UserJid = jlib:jid_to_binary({LUser, LServer, <<>>}),
-    TokenRecord = get_token(SubEl, UserJid),
-    case odbc_push_service:remove(LServer, TokenRecord#push_token.token) of
-        ok ->
-            IQ#iq{type = result, sub_el = [SubEl]};
-        _ ->
-            IQ#iq{type = error, sub_el = [SubEl]}
+    case get_token(SubEl, UserJid) of
+        not_valid_token ->
+            IQ#iq{type = error, sub_el = [SubEl]};
+        TokenRecord ->
+            case odbc_push_service:remove(LServer, TokenRecord#push_token.token) of
+                ok ->
+                    IQ#iq{type = result, sub_el = [SubEl]};
+                _ ->
+                    IQ#iq{type = error, sub_el = [SubEl]}
+            end
     end.
 
 get_token(SubEl, UserJid) ->
     Tag = xml:get_subtag(SubEl, <<"token">>),
     case Tag of
         false ->
-            not_exists;
+            not_valid_token;
         _ ->
-            #push_token{jid = UserJid, token = xml:get_tag_cdata(Tag),
-                type = binary_to_integer(xml:get_tag_attr_s(<<"type">>, Tag))}
+            case {is_valid_token(Tag), is_valid_type(Tag)} of
+                {false, _} -> not_valid_token;
+                {_, false} -> not_valid_token;
+                {Token, Type} ->
+                    #push_token{jid = UserJid, token = Token,
+                        type = binary_to_integer(Type)}
+            end
     end.
 
 is_query(Packet) ->
@@ -93,3 +107,18 @@ is_query(Packet) ->
         #xmlel{name = <<"query">>} -> true;
         _ -> false
     end.
+
+is_valid_token(Tag) ->
+    case xml:get_tag_cdata(Tag) of
+        false -> false;
+        <<>> -> false;
+        Token -> Token
+    end.
+
+is_valid_type(Tag) ->
+    case xml:get_tag_attr_s(<<"type">>, Tag) of
+        false -> false;
+        <<>> -> false;
+        Type -> Type
+    end.
+
