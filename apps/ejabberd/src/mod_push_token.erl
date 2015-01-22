@@ -110,14 +110,12 @@ is_query(Packet) ->
 
 is_valid_token(Tag) ->
     case xml:get_tag_cdata(Tag) of
-        false -> false;
         <<>> -> false;
         Token -> Token
     end.
 
 is_valid_type(Tag) ->
     case xml:get_tag_attr_s(<<"type">>, Tag) of
-        false -> false;
         <<>> -> false;
         Type -> Type
     end.
