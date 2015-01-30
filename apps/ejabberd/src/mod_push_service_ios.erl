@@ -1,9 +1,15 @@
 %%%===================================================================
 %%% @doc Implement Apple Push Notification Service (APNs)
-%%% fetures:
-%%% 1.Send notification to iOS device
-%%% 2.Log error on fail
-%%% 3.Get feedbck from apns and remove token record from server
+%%% Details:
+%%% 1. APNs module based on https://github.com/inaka/apns4erl
+%%% 2. Certificate file
+%%%     * generate certificate file use https://github.com/inaka/apns4erl/blob/master/priv/test_certs
+%%%     * modify .pem certificate file path in vars.config
+%%% 3. Get feedback from APNs
+%%%     * reduce unnecessary message overhead and improve overall system performance
+%%%     * connect to feedback channel and try to get deleted tokens everytime pushing messages to APNs
+%%%     * "deleted tokens" here means that intended app does not exist on the device
+%%%
 %%%===================================================================
 
 -module(mod_push_service_ios).
@@ -47,16 +53,9 @@ handle_apns_error(MsgId, Status) ->
     error_logger:error_msg("apns send message error: ~p - ~p~n", [MsgId, Status]).
 
 %% @doc delete token records when APNs feedback
-handle_apns_delete_subscription(Data) ->
-    error_logger:info_msg("delete apns subscription: ~p~n", [Data]),
-    case Data of
-        [_ | _] ->
-            lists:foreach(fun(X) ->
-                odbc_push_service:remove(?ODBC_SERVER, X)
-            end, Data);
-        _ ->
-            none
-    end.
+handle_apns_delete_subscription({_, DeviceToken} = _Data) ->
+    error_logger:info_msg("delete apns subscription: ~p~n", [_Data]),
+    odbc_push_service:remove(?ODBC_SERVER, list_to_binary(DeviceToken)).
 
 -spec create_notification(DeviceToken :: binary(),
     Content :: binary()) -> ok.

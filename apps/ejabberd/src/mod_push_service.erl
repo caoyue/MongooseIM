@@ -1,10 +1,14 @@
 %%%===================================================================
 %%% @doc Push Notification Service Module
-%%% Send push notification to device when user offline, in more detail:
-%%% 1. handler all offline message with a hook;
-%%% 2. extract chat content from stanza;
-%%% 3. get token records by user jid;
-%%% 3. call different push channels which dependent on push type in token records.
+%%% * Module Detail:
+%%%   1. handler all offline message with a hook;
+%%%   2. extract chat content from stanza;
+%%%   3. get token records by user jid;
+%%%   4. call different push channels which dependent on push type in token records.
+%%% * Push Type:
+%%%   1. iOS
+%%%   2. Android
+%%%   3. Other
 %%%===================================================================
 
 -module(mod_push_service).
@@ -193,47 +197,47 @@ make_push_message(#push_message{
                                      GroupName = get_group_name(Lang, LServer, GroupId),
                                      {get_group_nick(Lang, LServer, FromJid, GroupId), <<"[", GroupName/binary, "]">>}
                              end,
-    TMessage = case MessageType of
-                   text ->
-                       case Content of
-                           undefined ->
-                               translate(Lang, " send a message to you");
-                           _ ->
-                               SubContent = message_substring(Content),
-                               <<": ", SubContent/binary>>
-                       end;
-                   audio ->
-                       translate(Lang, " send an audio to you");
-                   video ->
-                       translate(Lang, " send a video to you");
-                   picture ->
-                       translate(Lang, " send a picture to you");
-                   location ->
-                       translate(Lang, " share location with you");
-                   _ ->
-                       translate(Lang, " send a message to you")
-               end,
-    <<GroupTitle/binary, Nickname/binary, TMessage/binary>>.
+    HeadTitle = <<GroupTitle/binary, Nickname/binary>>,
+    case MessageType of
+        text ->
+            case Content of
+                undefined ->
+                    translate(Lang, "~s send a message to you", [HeadTitle]);
+                _ ->
+                    SubContent = message_substring(Content),
+                    <<HeadTitle/binary, ": ", SubContent/binary>>
+            end;
+        audio ->
+            translate(Lang, "~s send an audio to you", [HeadTitle]);
+        video ->
+            translate(Lang, "~s send a video to you", [HeadTitle]);
+        picture ->
+            translate(Lang, "~s send a picture to you", [HeadTitle]);
+        location ->
+            translate(Lang, "~s share location with you", [HeadTitle]);
+        _ ->
+            translate(Lang, "~s send a message to you", [HeadTitle])
+    end.
 
 -spec get_roster_nick(Lang :: ejabberd:lang(), LServer :: binary(), FromJid :: binary(), ToJid :: binary()) -> binary().
 get_roster_nick(Lang, LServer, FromJid, ToUser) ->
     case odbc_push_service:get_roster_nick(LServer, FromJid, ToUser) of
         {ok, Name} -> Name;
-        _ -> translate(Lang, "unknow")
+        _ -> translate(Lang, "unknown")
     end.
 
 -spec get_group_nick(Lang :: ejabberd:lang(), LServer :: binary(), ToJid :: binary(), GroupId :: binary()) -> binary().
 get_group_nick(Lang, LServer, FromJid, GroupId) ->
     case odbc_push_service:get_group_nick(LServer, FromJid, GroupId) of
         {ok, Name} -> Name;
-        _ -> translate(Lang, "unknow")
+        _ -> translate(Lang, "unknown")
     end.
 
 -spec get_group_name(Lang :: ejabberd:lang(), LServer :: binary(), GroupId :: binary()) -> binary().
 get_group_name(Lang, LServer, GroupId) ->
     case odbc_push_service:get_group_name(LServer, GroupId) of
         {ok, Name} -> Name;
-        _ -> translate(Lang, "unknow")
+        _ -> translate(Lang, "unknown")
     end.
 
 -spec message_substring(Content :: binary()) -> binary().
@@ -249,7 +253,11 @@ message_substring(Content) ->
 
 -spec translate(Lang :: ejabberd:lang(), Text :: binary()) -> binary().
 translate(Lang, Text) ->
-    list_to_binary(translate:translate(Lang, Text)).
+    iolist_to_binary(translate:translate(Lang, Text)).
+
+-spec translate(Lang :: ejabberd:lang(), Text :: binary(), Replace :: list()) -> binary().
+translate(Lang, Text, Replace) ->
+    iolist_to_binary(io_lib:format(translate:translate(Lang, Text), Replace)).
 
 get_host_server() ->
     case ejabberd_config:get_global_option(hosts) of

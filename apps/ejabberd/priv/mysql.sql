@@ -344,12 +344,14 @@ CREATE TABLE privatemode (
     password varchar(250) CHARACTER SET binary NOT NULL
 ) CHARACTER SET utf8;
 
+-- push service begin
 CREATE TABLE push_service (
     id int PRIMARY KEY NOT NULL auto_increment,
     jid varchar(250) CHARACTER SET binary NOT NULL,
     token varchar(250) CHARACTER SET binary NOT NULL,
-    push_type tinyint unsigned NOT NULL,
+    push_type tinyint unsigned NOT NULL, -- push_type: 1. iOS, 2. Android, 3. Other
     last_login timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) CHARACTER SET utf8;
 CREATE INDEX push_jid_index ON push_service (jid);
 CREATE UNIQUE INDEX push_token_index ON push_service (token);
+-- push service end
