@@ -30,7 +30,8 @@
 -export([start/0,
     load_dir/1,
     load_file/2,
-    translate/2]).
+    translate/2,
+    translate/3]).
 
 -include("ejabberd.hrl").
 
@@ -142,6 +143,10 @@ translate(Lang, Msg) ->
     end.
 
 
+-spec translate(Lang :: ejabberd:lang(), Text :: binary(), Replace :: list()) -> binary().
+translate(Lang, Text, Replace) ->
+    io_lib:format(translate(Lang, Text), Replace).
+
 -spec translate(string()) -> string().
 translate(Msg) ->
     case ?MYLANG of
@@ -186,6 +191,6 @@ ascii_tolower([C | Cs]) ->
 ascii_tolower([]) ->
     [].
 
--spec unicode_convert(Unicode::string()) -> string().
+-spec unicode_convert(Unicode :: string()) -> string().
 unicode_convert(Unicode) ->
     binary_to_list(unicode:characters_to_binary(Unicode)).

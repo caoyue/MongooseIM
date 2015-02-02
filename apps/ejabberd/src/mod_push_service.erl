@@ -257,7 +257,7 @@ translate(Lang, Text) ->
 
 -spec translate(Lang :: ejabberd:lang(), Text :: binary(), Replace :: list()) -> binary().
 translate(Lang, Text, Replace) ->
-    iolist_to_binary(io_lib:format(translate:translate(Lang, Text), Replace)).
+    iolist_to_binary(translate:translate(Lang, Text, Replace)).
 
 get_host_server() ->
     case ejabberd_config:get_global_option(hosts) of
