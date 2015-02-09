@@ -445,7 +445,7 @@ get_roster(LServer, Username) ->
     ejabberd_odbc:sql_query(
       LServer,
       [<<"select username, jid, nick, subscription, ask, "
-         "askmessage, server, subscribe, type from rosterusers "
+         "askmessage, server, subscribe, type, private from rosterusers "
          "where username='">>, Username, "'"]).
 
 get_roster_jid_groups(LServer, Username) ->
@@ -475,7 +475,7 @@ del_user_roster_t(LServer, Username) ->
 get_roster_by_jid(_LServer, Username, SJID) ->
     ejabberd_odbc:sql_query_t(
       [<<"select username, jid, nick, subscription, "
-         "ask, askmessage, server, subscribe, type from rosterusers "
+         "ask, askmessage, server, subscribe, type, private from rosterusers "
          "where username='">>, Username, <<"' "
                                            "and jid='">>, SJID, "';"]).
 

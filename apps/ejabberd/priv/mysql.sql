@@ -52,6 +52,7 @@ CREATE TABLE rosterusers (
     server character(1) NOT NULL,
     subscribe text NOT NULL,
     type text,
+    private boolean NOT NULL DEFAULT false,
     created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) CHARACTER SET utf8;
 
@@ -331,8 +332,26 @@ CREATE TABLE groupuser (
     groupid int NOT NULL,
     jid varchar(250) CHARACTER SET binary NOT NULL,
     nickname varchar(250) CHARACTER SET binary,
+    private boolean NOT NULL DEFAULT false,
     joined_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) CHARACTER SET utf8;
 CREATE INDEX group_jid_index ON groupuser (jid);
 CREATE INDEX group_id_index ON groupuser (groupid);
 -- aft mod_groupchat tables end
+
+CREATE TABLE privatemode (
+    jid varchar(250) CHARACTER SET binary PRIMARY KEY NOT NULL,
+    password varchar(250) CHARACTER SET binary NOT NULL
+) CHARACTER SET utf8;
+
+-- push service begin
+CREATE TABLE push_service (
+    id int PRIMARY KEY NOT NULL auto_increment,
+    jid varchar(250) CHARACTER SET binary NOT NULL,
+    token varchar(250) CHARACTER SET binary NOT NULL,
+    push_type tinyint unsigned NOT NULL, -- push_type: 1. iOS, 2. Android, 3. Other
+    last_login timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) CHARACTER SET utf8;
+CREATE INDEX push_jid_index ON push_service (jid);
+CREATE UNIQUE INDEX push_token_index ON push_service (token);
+-- push service end

@@ -159,7 +159,8 @@ get_groups(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = Sub
 grouplist_to_json(List) ->
     JsonArray = [{struct, [{<<"groupid">>, GroupId},
                            {<<"groupname">>, GroupName},
-                           {<<"master">>, Owner}]} || {GroupId, GroupName, Owner} <- List],
+                           {<<"master">>, Owner},
+                           {<<"private">>, Private}]} || {GroupId, GroupName, Owner, Private} <- List],
     iolist_to_binary(mochijson2:encode(JsonArray)).
 
 %% @doc get groupinfo by groupid

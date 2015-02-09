@@ -107,9 +107,9 @@ get_members_by_groupid(LServer, GroupId) ->
 get_groups_by_jid(LServer, UserJid) ->
     case ejabberd_odbc:sql_query(
            LServer,
-           [<<"select groupinfo.groupid,groupinfo.name,groupinfo.owner from groupinfo,groupuser"
+           [<<"select groupinfo.groupid,groupinfo.name,groupinfo.owner,groupuser.private from groupinfo,groupuser"
               " where groupuser.jid = '">>, ejabberd_odbc:escape(UserJid), "' and groupinfo.groupid = groupuser.groupid;"]) of
-        {selected, [<<"groupid">>, <<"name">>, <<"owner">>], Rs} ->
+        {selected, [<<"groupid">>, <<"name">>, <<"owner">>,<<"private">>], Rs} ->
             {ok, Rs};
         Error ->
             {error, Error}
