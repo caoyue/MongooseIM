@@ -355,3 +355,12 @@ CREATE TABLE push_service (
 CREATE INDEX push_jid_index ON push_service (jid);
 CREATE UNIQUE INDEX push_token_index ON push_service (token);
 -- push service end
+
+-- mms_file begin
+CREATE TABLE mms_file (
+    uid varchar(64) PRIMARY KEY,
+    filename varchar(250) CHARACTER SET binary NOT NULL,
+    owner varchar(250) CHARACTER SET binary NOT NULL,
+    created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) CHARACTER SET utf8;
+-- mms_file end
