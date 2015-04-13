@@ -666,7 +666,7 @@ prepare_filter_sql(UserID, StartID, EndID, SWithJID, SWithResource) ->
                         _ -> ""
                     catch
                         _:_  ->
-                            ["user_id='", escape_user_id(UserID), "' AND"]
+                            ["user_id='", escape_user_id(UserID),"'"]
                     end,
     WhereStartID = case StartID of
                        undefined -> "";
