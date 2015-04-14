@@ -5,7 +5,7 @@
 
 -module(mod_mms_s3).
 
--export([config/0, bucket/0, start/0, get/2, upload/2]).
+-export([config/0, bucket/0, start/0, get/2, upload/2, upload_secret/0]).
 
 -include_lib("erlcloud/include/erlcloud_aws.hrl").
 
@@ -30,6 +30,9 @@ config() ->
         secret_access_key = ?ENV(s3_secret),
         timeout = ?ENV(s3_timeout)
     }.
+
+upload_secret() ->
+    ?ENV(upload_secret).
 
 bucket() ->
     ?ENV(s3_bucket).
