@@ -355,3 +355,23 @@ CREATE TABLE push_service (
 CREATE INDEX push_jid_index ON push_service (jid);
 CREATE UNIQUE INDEX push_token_index ON push_service (token);
 -- push service end
+
+-- organization begin
+CREATE TABLE organization (
+    id int PRIMARY KEY NOT NULL auto_increment,
+    name varchar(250) CHARACTER SET binary NOT NULL,
+    lft int NOT NULL,
+    rgt int NOT NULL,
+    depth int NOT NULL,
+    description varchar(250) CHARACTER SET binary,
+    project int NOT NULL
+) CHARACTER SET utf8;
+CREATE INDEX organization_tree_index ON organization (project);
+
+CREATE TABLE organization_user (
+    id int PRIMARY KEY NOT NULL auto_increment,
+    organization int NOT NULL,
+    jid varchar(250) CHARACTER SET binary NOT NULL
+) CHARACTER SET utf8;
+CREATE INDEX organization_user_index ON organization_user (organization, jid);
+-- organization end
