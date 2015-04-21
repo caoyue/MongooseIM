@@ -374,4 +374,15 @@ CREATE TABLE organization_user (
     jid varchar(250) CHARACTER SET binary NOT NULL
 ) CHARACTER SET utf8;
 CREATE INDEX organization_user_index ON organization_user (organization, jid);
+
+CREATE TABLE project (
+    id int PRIMARY KEY NOT NULL auto_increment,
+    name varchar(250) CHARACTER SET binary NOT NULL,
+    description varchar(250) CHARACTER SET binary,
+    status tinyint NOT NULL default 1,
+    start_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    end_at timestamp
+) CHARACTER SET utf8;
 -- organization end
+
+

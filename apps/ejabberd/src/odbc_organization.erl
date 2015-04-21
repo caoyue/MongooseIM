@@ -10,26 +10,12 @@
     update_node/3,
     add_node/3,
     add_employee/3,
-    remove_employee/3
+    remove_employee/3,
+    add_project/3
 ]).
 
 -include("jlib.hrl").
-
--record(node, {
-    id :: integer(),
-    name :: binary(),
-    lft :: binary() | integer(),
-    rgt :: binary() | integer(),
-    depth :: binary() | integer(),
-    description :: binary(),
-    project :: binary() | integer()
-}).
-
--record(employee, {
-    jid :: binary(),
-    organization_id :: integer(),
-    organization_name :: binary()
-}).
+-include("organization.hrl").
 
 test(C) ->
     A = case C of
@@ -44,7 +30,9 @@ test(C) ->
             5 ->
                 delete_node(<<"localhost">>, <<"5">>);
             6 ->
-                add_node(<<"localhost">>, <<"2">>, #node{name = <<"testadd">>, description = <<"adfadf">>, project = <<"1">>})
+                add_node(<<"localhost">>, <<"2">>, #node{name = <<"testadd">>, description = <<"adfadf">>, project = <<"1">>});
+            7 ->
+                add_project(<<"localhost">>, #project{name = <<"testproject">>, description = <<"">>}, <<"1">>)
         end,
     io:format("~p~n", [A]).
 
@@ -135,7 +123,7 @@ add_node(LServer, ParentId, #node{name = Name, description = Description} = _Nod
                 ejabberd_odbc:escape(Description), "',", Project, ");"]
         ],
         sql_list(Query),
-        {selected, [<<"id">>], [{Id}]} = ejabberd_odbc:sql_query_t([<<"select last_insert_id() as id;">>]),
+        {selected, [<<"id">>], [{Id}]} = ejabberd_odbc:sql_query_t(["select last_insert_id() as id;"]),
         {ok, #node{id = Id, lft = Left1, rgt = Right1, depth = Depth1, name = Name, description = Description}}
     end,
     case ejabberd_odbc:sql_transaction(LServer, F) of
@@ -147,7 +135,7 @@ add_node(LServer, ParentId, #node{name = Name, description = Description} = _Nod
 
 -spec add_employee(binary(), integer(), binary()) -> ok | {error, _}.
 add_employee(LServer, NodeId, Jid) ->
-    Query = ["insert into organization(organization,jid) values(", NodeId, ",'", Jid, "';"],
+    Query = ["insert into organization_user(organization, jid) values(", NodeId, ",'", Jid, "';"],
     case ejabberd_odbc:sql_query(LServer, Query) of
         {updated, 1} ->
             ok;
@@ -157,12 +145,31 @@ add_employee(LServer, NodeId, Jid) ->
 
 -spec remove_employee(binary(), integer(), binary()) -> ok | {error, _}.
 remove_employee(LServer, NodeId, Jid) ->
-    Query = ["delete from organization where organization = ", NodeId, " and jid = '", Jid, "';"],
+    Query = ["delete from organization_user where organization = ", NodeId, " and jid = '", Jid, "';"],
     case ejabberd_odbc:sql_query(LServer, Query) of
         {updated, 1} ->
             ok;
         {updated, 0} ->
             {error, not_exists};
+        Reason ->
+            {error, Reason}
+    end.
+
+-spec add_project(binary(), #project{}, binary()) -> {ok, #project{}} | {error, _}.
+add_project(LServer, #project{name = Name, description = Desc}, TemplateId) ->
+    F = fun() ->
+        Query1 = ["insert into project(name,description) values('",
+            ejabberd_odbc:escape(Name), "','", ejabberd_odbc:escape(Desc), "');"],
+        ejabberd_odbc:sql_query_t(Query1),
+        {selected, [<<"id">>], [{Id}]} = ejabberd_odbc:sql_query_t(["select last_insert_id() as id;"]),
+        Query2 = ["insert into organization(name,lft,rgt,depth,project) select name,lft,rgt,depth,",
+            Id, " from organization where project =", TemplateId, ";"],
+        ejabberd_odbc:sql_query_t(Query2),
+        Id
+    end,
+    case ejabberd_odbc:sql_transaction(LServer, F) of
+        {atomic, Id} ->
+            {ok, #project{id = Id, name = Name, description = Desc}};
         Reason ->
             {error, Reason}
     end.
