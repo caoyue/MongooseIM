@@ -3,6 +3,16 @@
 %%
 %% ===============================
 
+-record(group, {
+    id :: binary() | integer(),
+    name :: binary(),
+    owner :: binary()|ejabberd:jid(),
+    type :: binary() | integer(),
+    status :: binary() | integer(),
+    project :: binary() | integer(),
+    private::binary()
+}).
+
 -record(template, {
     id :: binary(),
     name :: binary()
@@ -29,7 +39,7 @@
     name :: binary(),
     description :: binary(),
     status :: integer(),
-    admin  :: binary(),
+    admin :: binary(),
     start_at :: binary(),
     end_at :: binary()|undefined
 }).

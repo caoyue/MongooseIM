@@ -324,7 +324,11 @@ CREATE TABLE groupinfo (
     groupid int PRIMARY KEY NOT NULL auto_increment,
     name varchar(250) CHARACTER SET binary,
     owner varchar(250) CHARACTER SET binary NOT NULL,
-    created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+    type tinyint NOT NULL default 1,  -- 1 - noraml group; 2 - task; 3 - event;
+    status tinyint NOT NULL default 1,
+    project int NOT NULL default 0,
+    created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    end_at timestamp
 ) CHARACTER SET utf8;
 
 CREATE TABLE groupuser (

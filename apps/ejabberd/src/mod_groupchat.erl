@@ -6,33 +6,78 @@
 
 -include("ejabberd.hrl").
 -include("jlib.hrl").
+-include("organization.hrl").
 
 -define(NS_GROUPCHAT, <<"aft:groupchat">>).
 
 start(Host, _Opts) ->
     gen_iq_handler:add_iq_handler(ejabberd_sm, Host,
-                                  ?NS_GROUPCHAT, ?MODULE, process_iq, no_queue).
+        ?NS_GROUPCHAT, ?MODULE, process_iq, no_queue).
 
 stop(Host) ->
     gen_iq_handler:remove_iq_handler(ejabberd_sm, Host, ?NS_GROUPCHAT).
+
+
+%% ================================================
+%% iq handler
+%% ================================================
+
+process_iq(From, To, #iq{xmlns = ?NS_GROUPCHAT, type = _Type, sub_el = SubEl} = IQ) ->
+    case SubEl of
+        #xmlel{name = <<"query">>} ->
+            case xml:get_tag_attr_s(<<"query_type">>, SubEl) of
+                <<"create_group">> ->
+                    create_group(From, To, IQ);
+                <<"add_member">> ->
+                    add_members(From, To, IQ);
+                <<"get_groups">> ->
+                    get_groups(From, To, IQ);
+                <<"get_members">> ->
+                    get_members(From, To, IQ);
+                <<"get_groupinfo">> ->
+                    get_groupinfo(From, To, IQ);
+                <<"group_member">> ->
+                    create_and_add(From, To, IQ);
+                <<"set_groupname">> ->
+                    set_groupname(From, To, IQ);
+                <<"remove_members">> ->
+                    remove_members(From, To, IQ);
+                <<"dismiss_group">> ->
+                    dismiss_group(From, To, IQ);
+                <<"set_nickname">> ->
+                    set_nickname(From, To, IQ);
+                _ ->
+                    IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+            end;
+        _ ->
+            IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+    end;
+
+process_iq(_, _, IQ) ->
+    #iq{sub_el = SubEl} = IQ,
+    IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}.
+
+
+%% ================================================
+%% functions
+%% ================================================
 
 %% @doc create group
 %% https://github.com/ZekeLu/MongooseIM/wiki/Extending-XMPP#3-create-a-group
 create_group(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = SubEl} = IQ) ->
     UserJid = jlib:jid_to_binary({LUser, LServer, <<>>}),
     GroupName = xml:get_tag_attr_s(<<"groupname">>, SubEl),
-    case odbc_groupchat:create_group(LServer, UserJid, GroupName) of
+    GroupType = xml:get_tag_attr_s(<<"grouptype">>, SubEl),
+    Project = xml:get_tag_attr_s(<<"project">>, SubEl),
+    case odbc_groupchat:create_group(LServer, #group{owner = UserJid, name = GroupName, type = GroupType, project = Project}) of
         {ok, GroupId} ->
             Res = SubEl#xmlel{attrs = [{<<"xmlns">>, ?NS_GROUPCHAT}], children =
-                                  [{xmlcdata, group_to_json(GroupName, GroupId, UserJid)}]},
+            [{xmlcdata, group_to_json(#group{id = GroupId, name = GroupName, type = GroupType,
+                project = Project, owner = UserJid, status = 1})}]},
             IQ#iq{type = result, sub_el = [Res]};
         {error, _} ->
             IQ#iq{type = error, sub_el = []}
     end.
-
-group_to_json(GroupName, GroupId, Owner) ->
-    Json = mochijson2:encode({struct, [{groupid, GroupId}, {groupname, GroupName}, {master, Owner}]}),
-    iolist_to_binary(Json).
 
 %% @doc add members
 %% https://github.com/ZekeLu/MongooseIM/wiki/Extending-XMPP#4-add-memebers-to-a-group
@@ -53,8 +98,8 @@ add_members(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = Su
                                 _ ->
                                     ExistsMembers = [Jid || {Jid, _} <- MembersInfoList],
                                     NewMembers = lists:filter(fun(X) ->
-                                                                      not lists:member(X, ExistsMembers)
-                                                              end, MembersList),
+                                        not lists:member(X, ExistsMembers)
+                                    end, MembersList),
                                     do_add_members(LServer, GroupId, ExistsMembers, NewMembers, IQ, SubEl)
                             end;
                         {error, _} ->
@@ -69,24 +114,24 @@ do_add_members(LServer, GroupId, ExistsMembers, NewMembers, IQ, SubEl) ->
     case NewMembers of
         [] ->
             IQ#iq{type = result, sub_el =
-                      [SubEl#xmlel{
-                         attrs = [{<<"xmlns">>, ?NS_GROUPCHAT}, {<<"groupid">>, GroupId},
-                                  {<<"query_type">>, <<"add_member">>}],
-                         children = []}]};
+            [SubEl#xmlel{
+                attrs = [{<<"xmlns">>, ?NS_GROUPCHAT}, {<<"groupid">>, GroupId},
+                    {<<"query_type">>, <<"add_member">>}],
+                children = []}]};
         _ ->
             case odbc_groupchat:add_members(LServer, GroupId, NewMembers) of
                 {ok, MembersResult} ->
                     case odbc_groupchat:get_groupinfo_by_groupid(LServer, GroupId) of
-                        {ok, GroupId, GroupName, GroupOwner} ->
+                        {ok, #group{id = GroupId, owner = GroupOwner, name = GroupName}} ->
                             push_groupmember(GroupId, GroupName, GroupOwner, LServer,
-                                             ExistsMembers ++ NewMembers, MembersResult, <<"add">>),
+                                ExistsMembers ++ NewMembers, MembersResult, <<"add">>),
                             IQ#iq{type = result,
-                                  sub_el = [SubEl#xmlel{attrs =
-                                                            [{<<"xmlns">>, ?NS_GROUPCHAT},
-                                                             {<<"groupid">>, GroupId},
-                                                             {<<"query_type">>, <<"add_member">>}],
-                                                        children = [{xmlcdata,
-                                                                     members_to_json(MembersResult)}]}]};
+                                sub_el = [SubEl#xmlel{attrs =
+                                [{<<"xmlns">>, ?NS_GROUPCHAT},
+                                    {<<"groupid">>, GroupId},
+                                    {<<"query_type">>, <<"add_member">>}],
+                                    children = [{xmlcdata,
+                                        members_to_json(MembersResult)}]}]};
                         {error, _} ->
                             IQ#iq{type = error, sub_el = []}
                     end;
@@ -100,24 +145,28 @@ do_add_members(LServer, GroupId, ExistsMembers, NewMembers, IQ, SubEl) ->
 create_and_add(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = SubEl} = IQ) ->
     UserJid = jlib:jid_to_binary({LUser, LServer, <<>>}),
     GroupName = xml:get_tag_attr_s(<<"groupname">>, SubEl),
+    GroupType = xml:get_tag_attr_s(<<"grouptype">>, SubEl),
+    Project = xml:get_tag_attr_s(<<"project">>, SubEl),
     MembersList = mochijson2:decode(xml:get_tag_cdata(SubEl)),
     case MembersList of
         [] ->
             IQ#iq{type = error, sub_el = []};
         _ ->
-            case odbc_groupchat:create_and_add(LServer, GroupName, MembersList, UserJid) of
+            case odbc_groupchat:create_and_add(LServer, #group{owner = UserJid, name = GroupName,
+                type = GroupType, project = Project}, MembersList) of
                 {ok, GroupMembersInfo} ->
                     [{GroupId, _, _} | _] = GroupMembersInfo,
                     MembersInfoList = [{Jid, NickName} || {_, Jid, NickName} <- GroupMembersInfo],
-                    push_groupmember(GroupId, GroupName, UserJid, LServer, [Jid || {Jid, _} <- MembersInfoList], MembersInfoList, <<"add">>),
+                    push_groupmember(GroupId, GroupName, UserJid, LServer, [Jid || {Jid, _} <- MembersInfoList],
+                        MembersInfoList, <<"add">>),
                     IQ#iq{type = result, sub_el = [SubEl#xmlel{
-                                                     attrs = [{<<"xmlns">>, ?NS_GROUPCHAT},
-                                                              {<<"groupid">>, GroupId},
-                                                              {<<"query_type">>, <<"group_member">>},
-                                                              {<<"groupname">>, GroupName},
-                                                              {<<"master">>, UserJid}
-                                                             ],
-                                                     children = [{xmlcdata, members_to_json(MembersInfoList)}]}]};
+                        attrs = [{<<"xmlns">>, ?NS_GROUPCHAT},
+                            {<<"groupid">>, GroupId},
+                            {<<"query_type">>, <<"group_member">>},
+                            {<<"groupname">>, GroupName},
+                            {<<"master">>, UserJid}
+                        ],
+                        children = [{xmlcdata, members_to_json(MembersInfoList)}]}]};
                 {error, _} ->
                     IQ#iq{type = error, sub_el = []}
             end
@@ -133,17 +182,13 @@ get_members(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = Su
             case odbc_groupchat:get_members_by_groupid(LServer, GroupId) of
                 {ok, MembersInfoList} ->
                     IQ#iq{type = result, sub_el = [SubEl#xmlel{children =
-                                                                   [{xmlcdata, members_to_json(MembersInfoList)}]}]};
+                    [{xmlcdata, members_to_json(MembersInfoList)}]}]};
                 {error, _} ->
                     IQ#iq{type = error, sub_el = []}
             end;
         _ ->
             IQ#iq{type = error, sub_el = []}
     end.
-
-members_to_json(Members) ->
-    JsonArray = [{struct, [{userjid, UserJid}, {nickname, NickName}]} || {UserJid, NickName} <- Members],
-    iolist_to_binary(mochijson2:encode(JsonArray)).
 
 %% @doc get groups by jid
 %% https://github.com/ZekeLu/MongooseIM/wiki/Extending-XMPP#1-get-all-groups
@@ -156,12 +201,6 @@ get_groups(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = Sub
             IQ#iq{type = error, sub_el = []}
     end.
 
-grouplist_to_json(List) ->
-    JsonArray = [{struct, [{<<"groupid">>, GroupId},
-                           {<<"groupname">>, GroupName},
-                           {<<"master">>, Owner},
-                           {<<"private">>, Private}]} || {GroupId, GroupName, Owner, Private} <- List],
-    iolist_to_binary(mochijson2:encode(JsonArray)).
 
 %% @doc get groupinfo by groupid
 %% https://github.com/ZekeLu/MongooseIM/wiki/Extending-XMPP#10-get-group-info-by-groupid
@@ -171,9 +210,9 @@ get_groupinfo(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = 
     case odbc_groupchat:is_user_in_group(LServer, UserJid, GroupId) of
         true ->
             case odbc_groupchat:get_groupinfo_by_groupid(LServer, GroupId) of
-                {ok, GroupId, GroupName, GroupOwner} ->
+                {ok, Group} ->
                     IQ#iq{type = result, sub_el = [SubEl#xmlel{children =
-                                                                   [{xmlcdata, group_to_json(GroupName, GroupId, GroupOwner)}]}]};
+                    [{xmlcdata, group_to_json(Group)}]}]};
                 {error, _} ->
                     IQ#iq{type = error, sub_el = []}
             end;
@@ -196,7 +235,7 @@ set_groupname(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = 
                         ok ->
                             push_groupinfo(GroupId, GroupName, LServer, MembersList, <<"rename">>),
                             Res = SubEl#xmlel{attrs = [{<<"xmlns">>, ?NS_GROUPCHAT},
-                                                       {<<"groupid">>, GroupId}, {<<"groupname">>, GroupName}]},
+                                {<<"groupid">>, GroupId}, {<<"groupname">>, GroupName}]},
                             IQ#iq{type = result, sub_el = [Res]};
                         {error, _} ->
                             IQ#iq{type = error, sub_el = []}
@@ -292,25 +331,25 @@ push_groupmember(GroupId, GroupName, GroupOwner, Server, ToList, MembersInfoList
     TypeAttr = {<<"type">>, <<"chat">>},
     Contents = groupmember_json(MembersInfoList, Action),
     PreAttrs = [{<<"xmlns">>, ?NS_GROUPCHAT}, {<<"type">>, <<"groupmember">>},
-                {<<"groupid">>, GroupId}, {<<"groupname">>, GroupName}],
+        {<<"groupid">>, GroupId}, {<<"groupname">>, GroupName}],
     Attrs = case GroupOwner of
                 <<>> -> PreAttrs;
                 _ -> [{<<"master">>, GroupOwner} | PreAttrs]
             end,
     Packet = {xmlel, <<"message">>, [],
-              [{xmlel, <<"push">>, Attrs,
-                [{xmlcdata, Contents}]}
-              ]},
+        [{xmlel, <<"push">>, Attrs,
+            [{xmlcdata, Contents}]}
+        ]},
     FromJid = jlib:make_jid(GroupId, Server, <<>>),
     lists:foreach(fun(ToJid) ->
-                          ToAttr = {<<"to">>, ToJid},
-                          ejabberd_router:route(FromJid, jlib:binary_to_jid(ToJid),
-                                                Packet#xmlel{attrs = [FromAttr, ToAttr, TypeAttr, LangAttr]}) end,
-                  ToList).
+        ToAttr = {<<"to">>, ToJid},
+        ejabberd_router:route(FromJid, jlib:binary_to_jid(ToJid),
+            Packet#xmlel{attrs = [FromAttr, ToAttr, TypeAttr, LangAttr]}) end,
+        ToList).
 
 groupmember_json(MembersInfoList, Action) ->
     JsonArray = [{struct, [{userjid, Jid}, {nickname, NickName},
-                           {action, Action}]} || {Jid, NickName} <- MembersInfoList],
+        {action, Action}]} || {Jid, NickName} <- MembersInfoList],
     iolist_to_binary(mochijson2:encode(JsonArray)).
 
 push_groupinfo(GroupId, GroupName, Server, ToList, Action) ->
@@ -320,57 +359,47 @@ push_groupinfo(GroupId, GroupName, Server, ToList, Action) ->
     TypeAttr = {<<"type">>, <<"chat">>},
     Contents = groupinfo_json(GroupId, GroupName, Action),
     Packet = {xmlel, <<"message">>, [],
-              [{xmlel, <<"push">>, [{<<"xmlns">>, ?NS_GROUPCHAT}, {<<"type">>, <<"groupinfo">>}],
-                [{xmlcdata, Contents}]}
-              ]},
+        [{xmlel, <<"push">>, [{<<"xmlns">>, ?NS_GROUPCHAT}, {<<"type">>, <<"groupinfo">>}],
+            [{xmlcdata, Contents}]}
+        ]},
     FromJid = jlib:make_jid(GroupId, Server, <<>>),
     lists:foreach(fun(ToJid) ->
-                          ToAttr = {<<"to">>, ToJid},
-                          ejabberd_router:route(FromJid, jlib:binary_to_jid(ToJid),
-                                                Packet#xmlel{attrs = [FromAttr, ToAttr, TypeAttr, LangAttr]}) end,
-                  ToList).
+        ToAttr = {<<"to">>, ToJid},
+        ejabberd_router:route(FromJid, jlib:binary_to_jid(ToJid),
+            Packet#xmlel{attrs = [FromAttr, ToAttr, TypeAttr, LangAttr]}) end,
+        ToList).
 
 groupinfo_json(GroupId, GroupName, Action) ->
     JsonArray = [{struct, [{groupid, GroupId}, {groupname, GroupName}, {action, Action}]}],
     iolist_to_binary(mochijson2:encode(JsonArray)).
 
-is_query_groupchat(Packet) ->
-    case Packet of
-        #xmlel{name = <<"query">>} -> true;
-        _ -> false
-    end.
 
-process_iq(From, To, #iq{xmlns = ?NS_GROUPCHAT, type = _Type, sub_el = SubEl} = IQ) ->
-    case is_query_groupchat(SubEl) of
-        true ->
-            case xml:get_tag_attr_s(<<"query_type">>, SubEl) of
-                <<"create_group">> ->
-                    create_group(From, To, IQ);
-                <<"add_member">> ->
-                    add_members(From, To, IQ);
-                <<"get_groups">> ->
-                    get_groups(From, To, IQ);
-                <<"get_members">> ->
-                    get_members(From, To, IQ);
-                <<"get_groupinfo">> ->
-                    get_groupinfo(From, To, IQ);
-                <<"group_member">> ->
-                    create_and_add(From, To, IQ);
-                <<"set_groupname">> ->
-                    set_groupname(From, To, IQ);
-                <<"remove_members">> ->
-                    remove_members(From, To, IQ);
-                <<"dismiss_group">> ->
-                    dismiss_group(From, To, IQ);
-                <<"set_nickname">> ->
-                    set_nickname(From, To, IQ);
-                _ ->
-                    IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
-            end;
-        false ->
-            IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
-    end;
+%% ================================================
+%% helpers
+%% ================================================
 
-process_iq(_, _, IQ) ->
-    #iq{sub_el = SubEl} = IQ,
-    IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}.
+-spec group_to_json(#group{}) -> binary().
+group_to_json(Group) ->
+    Json = mochijson2:encode({struct, [
+        {groupid, Group#group.id},
+        {groupname, Group#group.name},
+        {master, Group#group.owner},
+        {type, Group#group.type},
+        {project, Group#group.project},
+        {status, Group#group.status}]}),
+    iolist_to_binary(Json).
+
+grouplist_to_json(List) ->
+    JsonArray = [{struct, [
+        {groupid, Group#group.id},
+        {groupname, Group#group.name},
+        {master, Group#group.owner},
+        {type, Group#group.type},
+        {project, Group#group.project},
+        {status, Group#group.status},
+        {private, Group#group.private}]} || Group <- List],
+    iolist_to_binary(mochijson2:encode(JsonArray)).
+
+members_to_json(Members) ->
+    JsonArray = [{struct, [{userjid, UserJid}, {nickname, NickName}]} || {UserJid, NickName} <- Members],
+    iolist_to_binary(mochijson2:encode(JsonArray)).
