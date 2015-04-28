@@ -350,12 +350,47 @@ parse_aft_submit_data(#xmlel{name = <<"x">>, attrs = Attrs, children = Els}) ->
                        true ->
                             invalid
                     end;
-
+                SearchType =:= <<"phone_2">>; SearchType =:= <<"nick">> ->
+                   {struct, Data} = mochijson2:decode( xml:get_cdata(Els) ),
+                   case lists:keyfind(<<"key">>, 1, Data) of
+                       false ->
+                           invalid;
+                       {<<"key">>, Value} ->
+                           { SearchType, Value }
+                   end;
                true ->
                     invalid
             end;
         _ -> invalid
     end.
+make_search2_response(IQ, Type, failed) ->
+    IQ#iq{type = result,
+        sub_el =
+        [#xmlel{name = <<"query">>,
+            attrs =
+            [{<<"xmlns">>, ?NS_SEARCH}],
+            children =
+            [#xmlel{name =
+            <<"x">>,
+                attrs =
+                [{<<"xmlns">>, ?NS_XDATA}, {<<"type">>, <<"result">>}, {<<"search_ID_type">>, Type}],
+                children =
+                [{xmlcdata, []}]
+            }]}]};
+make_search2_response(IQ, Type, Result) ->
+    IQ#iq{type = result,
+        sub_el =
+        [#xmlel{name = <<"query">>,
+            attrs =
+            [{<<"xmlns">>, ?NS_SEARCH}],
+            children =
+            [#xmlel{name =
+            <<"x">>,
+                attrs =
+                [{<<"xmlns">>, ?NS_XDATA}, {<<"type">>, <<"result">>}, {<<"search_ID_type">>, Type}],
+                children =
+                [{xmlcdata, Result}]
+            }]}]}.
 
 make_search_response(_, no, no, no, IQ, Type) ->
     IQ#iq{type = result,
@@ -435,6 +470,15 @@ do_route(VHost, From, To, Packet, #iq{type = set,
                                             ejabberd_router:route(To, From, jlib:iq_to_xml(Response));
                                         {error, _, _, _} ->
                                             Response = make_search_response(Data, no, no, no, IQ, KeyType),
+                                            ejabberd_router:route(To, From, jlib:iq_to_xml(Response))
+                                    end;
+                               KeyType =:= <<"phone_2">>; KeyType =:= <<"nick">> ->
+                                    case mod_vcard_odbc:search2(VHost, KeyType, Data) of
+                                        {ok, Result} ->
+                                            Response = make_search2_response(IQ, KeyType, Result),
+                                            ejabberd_router:route(To, From, jlib:iq_to_xml(Response));
+                                        error ->
+                                            Response = make_search2_response(IQ, KeyType, failed),
                                             ejabberd_router:route(To, From, jlib:iq_to_xml(Response))
                                     end;
                                true ->
