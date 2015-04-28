@@ -3,6 +3,10 @@
 %%
 %% ===============================
 
+-record(template, {
+    id :: binary(),
+    name :: binary()
+}).
 
 -record(node, {
     id :: integer() | binary()|undefined,
@@ -25,6 +29,7 @@
     name :: binary(),
     description :: binary(),
     status :: integer(),
+    admin  :: binary(),
     start_at :: binary(),
     end_at :: binary()|undefined
 }).
