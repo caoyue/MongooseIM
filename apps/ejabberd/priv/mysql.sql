@@ -371,7 +371,8 @@ CREATE INDEX organization_tree_index ON organization (project);
 CREATE TABLE organization_user (
     id int PRIMARY KEY NOT NULL auto_increment,
     organization int NOT NULL,
-    jid varchar(250) CHARACTER SET binary NOT NULL
+    jid varchar(250) CHARACTER SET binary NOT NULL,
+    project int NOT NULL
 ) CHARACTER SET utf8;
 CREATE INDEX organization_user_index ON organization_user (organization, jid);
 
@@ -380,6 +381,7 @@ CREATE TABLE project (
     name varchar(250) CHARACTER SET binary NOT NULL,
     description varchar(250) CHARACTER SET binary,
     status tinyint NOT NULL default 1,
+    admin varchar(250) CHARACTER SET binary NOT NULL,
     start_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     end_at timestamp
 ) CHARACTER SET utf8;
