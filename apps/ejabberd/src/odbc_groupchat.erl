@@ -19,7 +19,7 @@
 -include("organization.hrl").
 
 -spec create_group(binary(), #group{}) -> {ok, binary()} | {error, _}.
-create_group(LServer, #group{id = GroupId, owner = GroupOwner, name = GroupName, type = GroupType, project = Project}) ->
+create_group(LServer, #group{owner = GroupOwner, name = GroupName, type = GroupType, project = Project}) ->
     F = fun() ->
         ejabberd_odbc:sql_query_t([<<"insert into groupinfo(name,owner,type,project) values('">>,
             ejabberd_odbc:escape(GroupName), "','", ejabberd_odbc:escape(GroupOwner), "',", GroupType, ",", Project, ");"]),
@@ -57,7 +57,7 @@ add_members(LServer, GroupId, MembersList) ->
 get_groupinfo_by_groupid(LServer, GroupId) ->
     case ejabberd_odbc:sql_query(
         LServer,
-        ["select name,owner from groupinfo where groupid = '", ejabberd_odbc:escape(GroupId), "';"]) of
+        ["select name,owner,type,project,status from groupinfo where groupid = '", ejabberd_odbc:escape(GroupId), "';"]) of
         {selected, [<<"name">>, <<"owner">>, <<"type">>, <<"project">>, <<"status">>],
             [{GroupName, GroupOwner, GroupType, Project, Status}]} ->
             {ok, #group{id = GroupId, owner = GroupOwner, name = GroupName,
