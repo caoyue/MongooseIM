@@ -380,25 +380,22 @@ groupinfo_json(GroupId, GroupName, Action) ->
 
 -spec group_to_json(#group{}) -> binary().
 group_to_json(Group) ->
-    Json = mochijson2:encode({struct, [
-        {groupid, Group#group.id},
-        {groupname, Group#group.name},
-        {master, Group#group.owner},
-        {type, Group#group.type},
-        {project, Group#group.project},
-        {status, Group#group.status}]}),
-    iolist_to_binary(Json).
+    iolist_to_binary(mochijson2:encode(record_to_json(Group))).
 
+-spec grouplist_to_json([#group{}]) -> binary().
 grouplist_to_json(List) ->
-    JsonArray = [{struct, [
+    JsonArray = [record_to_json(Group) || Group <- List],
+    iolist_to_binary(mochijson2:encode(JsonArray)).
+
+record_to_json(Group) ->
+    {struct, [
         {groupid, Group#group.id},
         {groupname, Group#group.name},
         {master, Group#group.owner},
         {type, Group#group.type},
         {project, Group#group.project},
         {status, Group#group.status},
-        {private, Group#group.private}]} || Group <- List],
-    iolist_to_binary(mochijson2:encode(JsonArray)).
+        {private, Group#group.private}]}.
 
 members_to_json(Members) ->
     JsonArray = [{struct, [{userjid, UserJid}, {nickname, NickName}]} || {UserJid, NickName} <- Members],
