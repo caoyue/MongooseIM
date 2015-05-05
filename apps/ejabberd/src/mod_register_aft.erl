@@ -118,83 +118,277 @@ process_iq(_From, _To, #iq{sub_el = SubEl} = IQ) ->
     IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}.
 
 %%%===================================================================
-%%% Internal functions
+%%% Internal functions. called by unauthenticated_iq_register or IQ handler.
 %%%===================================================================
 
-process_unauthenticated_iq(Server,
-                           #iq{type = set, lang = Lang1, sub_el = SubEl} = IQ,
-                           IpAddress) ->
-    Lang = binary_to_list(Lang1),
-    case check_timeout(IpAddress) of
-        true ->
-            PhoneTag = xml:get_subtag(SubEl, <<"phone">>),
-            EmailTag = xml:get_subtag(SubEl, <<"email">>),
-            PasswordTag = xml:get_subtag(SubEl, <<"password">>),
-            NickTag = xml:get_subtag(SubEl, <<"nick">>),
-            if ((PhoneTag =:= false) and (EmailTag =:= false)) or (PasswordTag =:= false) or (NickTag =:= false) ->
-                    IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]};
+check_do_what(SubType, PhoneTag, CodeTag, NickTag, PasswordTag, TokenTag) ->
+    case {SubType, PhoneTag, CodeTag, NickTag, PasswordTag, TokenTag} of
+        {{value, <<"get_code">>}, Phone, false, false, false, false} ->
+            if Phone /= false ->
+                   {ok, <<"get_code">>};
                true ->
-                    case try_register(get_tag_cdata(PhoneTag),
-                                      get_tag_cdata(EmailTag),
-                                      get_tag_cdata(PasswordTag),
-                                      get_tag_cdata(NickTag),
-                                      Server, Lang, IpAddress) of
-                        ok ->
-                            IQ#iq{type = result,
-                                  sub_el = [SubEl]};
-                        {error, Error} ->
-                            IQ#iq{type = error,
-                                  sub_el = [SubEl, Error]}
-                    end
+                   {error, bad_request}
             end;
-        false ->
-            ErrText = "Users are not allowed to register "
-                "accounts so quickly",
-            {error, ?ERRT_RESOURCE_CONSTRAINT(Lang, ErrText)}
+        {{value, <<"register">>}, Phone, Code, Nick, false, false} ->
+            if (Phone /= false) and (Code /= false) and (Nick /= false)  ->
+                    {ok, <<"register">>};
+                true ->
+                    {error, bad_request}
+            end;
+        {{value, <<"find">>}, Phone, Code, false, false, false} ->
+            if (Phone /= false) and (Code /= false)  ->
+                {ok, <<"find">>};
+                true ->
+                    {error, bad_request}
+            end;
+        {{value, <<"set_password">>}, false, false, false, Password, Token} ->
+            if (Password /= false) and (Token /= false) ->
+                    {ok, <<"set_password">>};
+                true ->
+                    {error, bad_request}
+            end;
+        _ ->
+            {error, bad_request}
     end.
 
-try_register(Phone, Email, Password, Nick, Server, Lang, IpAddress) ->
-    case ejabberd_auth:check_phone_and_email(Phone, Email, Server) of
-        {error, _Reason} ->
-            {error, ?ERR_INTERNAL_SERVER_ERROR};
-        {info, _} ->
-            {error, ?ERR_CONFLICT};
-        true ->
-            case is_strong_password(Server, Password) of
-                true ->
-                    GUID = generate_guid(),
-                    JID = jlib:make_jid(GUID, Server, <<>>),
-                    case ejabberd_auth:try_register_with_phone_or_email(GUID, Server, Password, Phone, Email, Nick) of
-                        {atomic, ok} ->
-                            send_register_validation(GUID, Phone, Email, Server),
-                            send_welcome_message(JID),
-                            send_registration_notifications(JID, IpAddress),
-                            ok;
-                        Error ->
-                            remove_timeout(IpAddress),
-                            case Error of
-                                {atomic, exists} ->
-                                    {error, ?ERR_CONFLICT};
-                                {error, invalid_jid} ->
-                                    {error, ?ERR_JID_MALFORMED};
-                                {error, not_allowed} ->
-                                    {error, ?ERR_NOT_ALLOWED};
-                                {error, _Reason} ->
-                                    {error, ?ERR_INTERNAL_SERVER_ERROR}
-                            end
-                    end;
-                false ->
-                    ErrText = "The password is too weak",
-                    {error, ?ERRT_NOT_ACCEPTABLE(Lang, ErrText)}
+process_unauthenticated_iq(Server,
+    #iq{ lang = Lang1, sub_el = SubEl} = IQ,
+    IpAddress) ->
+    Lang = binary_to_list(Lang1),
+    PhoneTag = xml:get_subtag(SubEl, <<"phone">>),
+    CodeTag = xml:get_subtag(SubEl, <<"code">>),
+    NickTag = xml:get_subtag(SubEl, <<"nick">>),
+    PasswordTag = xml:get_subtag(SubEl, <<"password">>),
+    TokenTag = xml:get_subtag(SubEl, <<"token">>),
+    SubType = xml:get_tag_attr(<<"subtype">>, SubEl),
+
+    case check_do_what(SubType, PhoneTag, CodeTag, NickTag, PasswordTag, TokenTag) of
+        {error, bad_request} ->
+            IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]};
+        {ok, <<"get_code">>} ->
+            case get_code(get_tag_cdata(PhoneTag)) of
+                {ok, Code} ->
+                    Phone = get_tag_cdata(PhoneTag),
+                    IQ#iq{type = result,
+                           sub_el = [#xmlel{name = <<"query">>,
+                                            attrs = [{<<"xmlns">>, <<"aft:register">>},
+                                                     {<<"subtype">>, <<"get_code">>}],
+                                            children = [#xmlel{name = <<"phone">>,
+                                                               children = [#xmlcdata{content = Phone}]},
+                                                        #xmlel{name = <<"code">>,
+                                                               children = [#xmlcdata{content = Code}]}]}]};
+                {error, Error} ->
+                    IQ#iq{type = error, sub_el = [SubEl, Error]}
+            end;
+        {ok, <<"register">>} ->
+            case try_register(get_tag_cdata(PhoneTag),
+                              get_tag_cdata(NickTag),
+                              get_tag_cdata(CodeTag),
+                              Server, Lang, IpAddress) of
+                {ok, {Phone, Token}} ->
+                    IQ#iq{type = result,
+                        sub_el = [#xmlel{name = <<"query">>,
+                            attrs = [{<<"xmlns">>, <<"aft:register">>},
+                                     {<<"subtype">>, <<"register">>}],
+                            children = [#xmlel{name = <<"phone">>,
+                                                children = [#xmlcdata{content = Phone}]},
+                                        #xmlel{name = <<"token">>,
+                                               children = [#xmlcdata{content = Token}]}]}]};
+                {error, Error} ->
+                    IQ#iq{type = error,
+                        sub_el = [SubEl, Error]}
+            end;
+        {ok, <<"find">>} ->
+            case find(get_tag_cdata(PhoneTag),
+                      get_tag_cdata(CodeTag),
+                      Server, Lang, IpAddress) of
+                {ok, {Phone, Token}} ->
+                    IQ#iq{type = result,
+                        sub_el = [#xmlel{name = <<"query">>,
+                            attrs = [{<<"xmlns">>, <<"aft:register">>},
+                                     {<<"subtype">>, <<"find">>}],
+                            children = [#xmlel{name = <<"phone">>,
+                                               children = [#xmlcdata{content = Phone}]},
+                                        #xmlel{name = <<"token">>,
+                                               children = [#xmlcdata{content = Token}]}]}]};
+                {error, Error} ->
+                    IQ#iq{type = error,
+                        sub_el = [SubEl, Error]}
+            end;
+        {ok, <<"set_password">>} ->
+            case try_set_password(get_tag_cdata(TokenTag),
+                              get_tag_cdata(PasswordTag), Server) of
+                {ok, {ok, Phone}} ->
+                    Pas = get_tag_cdata(PasswordTag),
+                    IQ#iq{type = result,
+                        sub_el = [#xmlel{name = <<"query">>,
+                            attrs = [{<<"xmlns">>, <<"aft:register">>},
+                                     {<<"subtype">>, <<"set_password">>}],
+                            children = [#xmlel{name = <<"phone">>,
+                                children = [#xmlcdata{content = Phone}]},
+                                #xmlel{name = <<"password">>,
+                                    children = [#xmlcdata{content = Pas}]}]}]};
+                {error, Error} ->
+                    IQ#iq{type = error,
+                        sub_el = [SubEl, Error]}
             end
     end.
 
-get_tag_cdata(false) ->
-    <<>>;
-get_tag_cdata(Tag) ->
-    xml:get_tag_cdata(Tag).
+get_code(Phone) ->
+    case check_phone_number_valid(Phone) of
+        true ->
+            Code = list_to_binary(ejabberd_redis:random_code()),
+            Key = <<"code_", Phone/binary>>,
+            SurvivalTime = 60,
+            Allowed = case ejabberd_redis:cmd(["TTL", [Key]]) of
+                        -2 ->
+                            true;
+                        -1 ->
+                            true;
+                        ST ->
+                            if (ST > 40) and (ST < 60) -> %% 20 Seconds interval.
+                                  false;
+                               true ->
+                                  true
+                            end
+                        end,
 
-%% @doc Try to change password and return IQ response
+            case Allowed of
+                true ->
+                    ejabberd_redis:cmd([["DEL", [Key]],
+                        ["APPEND", [Key], [Code]],
+                        ["EXPIRE", [Key], SurvivalTime]]),
+                    %% TOFIX: send code message to phone.
+                    %SendMSG = "validation code is" ++ SMSCode ++", the code is valid in 60 seconds,
+                    %%          this code is only use for phone app,
+                    %%          you shoule make sure this code is knowed only by you"
+
+                    {ok, Code};
+                false ->
+                    {error, ?AFT_ERR_GET_CODE_SO_QUICKLY}
+            end;
+        false ->
+            {error, ?AFT_ERR_BAD_PHONE_FORMAT}
+    end.
+
+try_register(Phone, Nick, Code, Server, _Lang, IpAddress) ->
+    case check_nick_name_valid(Nick) of
+        true ->
+            case ejabberd_redis:cmd(["MGET", [<<"code_", Phone/binary>>]]) of
+                [undefined] ->
+                    {error, ?AFT_ERR_BAD_CODE};
+                [CacheCode] ->
+                    if CacheCode =:= Code ->
+                        Temp = generate_guid(),
+                        Token = <<"setpwd_", Temp/binary>>,
+                        case ejabberd_auth_odbc:user_info(Server, Phone) of
+                            {error, _} ->
+                                {error, ?AFT_ERR_DATABASE};
+                            {info, _} ->
+                                ejabberd_redis:cmd(["DEL", [<<"code_", Phone/binary>>]]),
+                                {error, ?AFT_ERR_PHONE_EXIST};
+                            not_exist ->
+                                ejabberd_redis:cmd(["DEL", [<<"code_", Phone/binary>>]]),
+                                GUID = generate_guid(),
+                                case check_timeout(IpAddress) of
+                                    true ->
+                                        case ejabberd_auth:aft_try_register(GUID, Server, Phone, Nick) of
+                                            {error, not_allowed} ->
+                                                remove_timeout(IpAddress),
+                                                {error, ?AFT_ERR_IP_FORBIDDEN};
+                                            {atomic, exists} ->
+                                                remove_timeout(IpAddress),
+                                                {error, ?AFT_ERR_PHONE_EXIST};
+                                            {atomic, ok} ->
+                                                SurvivalTime = 3600,
+                                                ejabberd_redis:cmd([["DEL", [Token]],
+                                                    ["APPEND", [Token], [Phone, <<":">>, GUID]],
+                                                    ["EXPIRE", [Token], SurvivalTime]]),
+                                                JID = jlib:make_jid(GUID, Server, <<>>),
+                                                %send_registration_notifications(JID, IpAddress),
+                                                send_welcome_message(JID),
+                                                {ok, {Phone, Token}};
+                                            _ ->
+                                                remove_timeout(IpAddress),
+                                                {error, ?AFT_ERR_DATABASE}
+                                        end;
+                                    false ->
+                                        {error, ?AFT_ERR_REGISTER_SO_QUICKLY}
+                                end
+                        end;
+                        true ->
+
+                            {error, ?AFT_ERR_BAD_CODE}
+                    end
+            end;
+        false ->
+            {error, ?AFT_ERR_BAD_NICK_FORMAT}
+    end.
+
+find(Phone, Code, Server, _Lang, IpAddress) ->
+    case ejabberd_redis:cmd(["MGET", [<<"code_", Phone/binary>>]]) of
+        [undefined] ->
+            {error, ?AFT_ERR_BAD_CODE};
+        [CacheCode] ->
+            if CacheCode =:= Code ->
+                case ejabberd_auth_odbc:user_info(Server, Phone) of
+                    {info, {UserName, _, _}} ->
+                        Temp = generate_guid(),
+                        Token = <<"setpwd_", Temp/binary >>,
+                        SurvivalTime = 3600,
+                        %% [RegType, <<":">>, GUID, <<":">>, Password, <<":">>, Token]]),
+                        ejabberd_redis:cmd([["DEL", [Token]],
+                            ["APPEND", [Token], [Phone, <<":">>, UserName]],
+                            ["EXPIRE", [Token], SurvivalTime]]),
+                        {ok, {Phone,Token}};
+                    not_exist ->
+                        {error, ?AFT_ERR_PHONE_NOT_EXIST};
+                    _ ->
+                        {error, ?AFT_ERR_DATABASE}
+                end;
+                true ->
+                    {error, ?AFT_ERR_BAD_CODE}
+            end
+    end.
+
+try_set_password(Token, Password, Server) ->
+    case ejabberd_redis:cmd(["MGET", [Token]]) of
+        [undefined] ->
+            {error, ?AFT_ERR_PASSWORD_SETTING_EXPIRE};
+        [CacheData] ->
+            case binary:split(CacheData, <<":">>, [global]) of
+                [Phone, User] ->
+                    case ejabberd_auth_odbc:user_info(Server, Phone) of
+                        {info, _} ->
+                            case check_password(Server, Password) of
+                                {ok, ok} ->
+                                    ejabberd_redis:cmd(["DEL", [Token]]),
+                                    case ejabberd_auth:set_password(User, Server, Password) of
+                                        ok ->
+                                            {ok, {ok, Phone}};
+                                        _ ->
+                                            {error, ?AFT_ERR_DATABASE}
+                                    end;
+                                {error, invalid_password} ->
+                                    {error, ?AFT_ERR_BAD_PASSWORD_FORMAT};
+                                {error, error} ->
+                                    {error, ?AFT_ERR_BAD_PASSWORD_FORMAT};
+                                {error, weak_password} ->
+                                    {error, ?AFT_ERR_WEAK_PASSWORD}
+                            end;
+                        not_exist ->
+                            {error, ?AFT_ERR_PHONE_NOT_EXIST};
+                        _ ->
+                            {error, ?AFT_ERR_DATABASE}
+                    end;
+                _ ->
+                    {error, ?AFT_ERR_LOGIC_SERVER}
+            end;
+        _ ->
+            {error, ?AFT_ERR_LOGIC_SERVER}
+    end.
+
+%% @doc Try to change password and return IQ response.
 try_set_password(User, Server, OldPassword, Password, IQ, SubEl, Lang) ->
     case ejabberd_auth:check_password(User, Server, OldPassword) of
         true ->
@@ -215,60 +409,22 @@ try_set_password(User, Server, OldPassword, Password, IQ, SubEl, Lang) ->
                 false ->
                     ErrText = "The password is too weak",
                     IQ#iq{type = error,
-                          sub_el = [SubEl, ?ERRT_NOT_ACCEPTABLE(Lang, ErrText)]}
+                        sub_el = [SubEl, ?ERRT_NOT_ACCEPTABLE(Lang, ErrText)]}
             end;
         _ ->
             ErrText = "The old password is wrong",
             IQ#iq{type = error,
-                  sub_el = [SubEl, ?ERRT_NOT_AUTHORIZED(Lang, ErrText)]}
+                sub_el = [SubEl, ?ERRT_NOT_AUTHORIZED(Lang, ErrText)]}
     end.
 
-%% generate UUID. _begin.
-get_parts(<<TL:32, TM:16, THV:16, CSR:8, CSL:8, N:48>>) ->
-    [TL, TM, THV, CSR, CSL, N].
+%%%===================================================================
+%%% help functions. called by Internal functions.
+%%%===================================================================
 
-to_string(UUID) ->
-    io_lib:format("~8.16.0b~4.16.0b~4.16.0b~2.16.0b~2.16.0b~12.16.0b", get_parts(UUID)).
-
-v4(R1, R2, R3, R4) ->
-    <<R1:48, 4:4, R2:12, 2:2, R3:32, R4:30>>.
-
-generate_guid() ->
-    list_to_binary(to_string(
-                     v4(crypto:rand_uniform(1, round(math:pow(2, 48))) - 1,
-                        crypto:rand_uniform(1, round(math:pow(2, 12))) - 1,
-                        crypto:rand_uniform(1, round(math:pow(2, 32))) - 1,
-                        crypto:rand_uniform(1, round(math:pow(2, 30))) - 1))).
-%% _end.
-
-%% TOFIX: send sms
-send_register_validation(_GUID, Phone, _Email, _Server) when Phone /= <<>> ->
-    sms;
-send_register_validation(GUID, _Phone, Email, Server) when Email /= <<>> ->
-    LServer = jlib:nameprep(Server),
-    BareJID = <<GUID/binary, $@, LServer/binary>>,
-    %% TOFIX: how to deploy the web server and the XMPP server?
-    Href = <<"http://", LServer/binary, ":5280/verify?token=", BareJID/binary>>,
-    kissnapp_email:send_register_validate("Kissnapp Register Validation", binary_to_list(Email), binary_to_list(Href)).
-
-
-send_welcome_message(JID) ->
-    Host = JID#jid.lserver,
-    case gen_mod:get_module_opt(Host, ?MODULE, welcome_message, {"", ""}) of
-        {"", ""} ->
-            ok;
-        {Subj, Body} ->
-            ejabberd_router:route(
-              jlib:make_jid(<<>>, Host, <<>>),
-              JID,
-              #xmlel{name = <<"message">>, attrs = [{<<"type">>, <<"normal">>}],
-                     children = [#xmlel{name = <<"subject">>,
-                                        children = [#xmlcdata{content = Subj}]},
-                                 #xmlel{name = <<"body">>,
-                                        children = [#xmlcdata{content = Body}]}]});
-        _ ->
-            ok
-    end.
+get_tag_cdata(false) ->
+    <<>>;
+get_tag_cdata(Tag) ->
+    xml:get_tag_cdata(Tag).
 
 send_registration_notifications(UJID, Source) ->
     Host = UJID#jid.lserver,
@@ -412,4 +568,77 @@ is_strong_password(Server, Password) ->
             ?WARNING_MSG("Wrong value for password_strength option: ~p",
                          [Wrong]),
             true
+    end.
+
+
+%% valid: not entirely composed of space, enter or empty.
+check_nick_name_valid(Nick) ->
+    Data = lists:filter(fun(E) ->
+        case E of
+            <<>> -> false;
+            _ -> true end end,
+        binary:split(Nick, [<<" ">>, <<"\n">>], [global])),
+    if length(Data) >= 1 ->
+        true;
+        true ->
+            false
+    end.
+
+check_phone_number_valid(Number) ->
+    %% TOFIX: if only use in China, use "^\\+[0-9]{0,13}$" or "^\\+86[0-9]{0,11}$" ,  other use "^\\+[0-9]{0,49}$"
+    case re:run(binary_to_list(Number), "^\\+86[0-9]{0,11}$") of
+        nomatch -> false;
+        _ -> true
+    end.
+
+check_password(_Server, <<>>) ->
+    {error, error};
+check_password(Server, Password) ->
+    case is_strong_password(Server, Password) of
+        true ->
+            case ejabberd_auth_odbc:prepare_password(Server, Password) of
+                false ->
+                    {error, invalid_password};
+                _ ->
+                    {ok, ok}
+            end;
+
+        false ->
+            {error, weak_password}
+    end.
+
+%% generate UUID. _begin.
+get_parts(<<TL:32, TM:16, THV:16, CSR:8, CSL:8, N:48>>) ->
+    [TL, TM, THV, CSR, CSL, N].
+
+to_string(UUID) ->
+    io_lib:format("~8.16.0b~4.16.0b~4.16.0b~2.16.0b~2.16.0b~12.16.0b", get_parts(UUID)).
+
+v4(R1, R2, R3, R4) ->
+    <<R1:48, 4:4, R2:12, 2:2, R3:32, R4:30>>.
+
+generate_guid() ->
+    list_to_binary(to_string(
+        v4(crypto:rand_uniform(1, round(math:pow(2, 48))) - 1,
+            crypto:rand_uniform(1, round(math:pow(2, 12))) - 1,
+            crypto:rand_uniform(1, round(math:pow(2, 32))) - 1,
+            crypto:rand_uniform(1, round(math:pow(2, 30))) - 1))).
+%% _end.
+
+send_welcome_message(JID) ->
+    Host = JID#jid.lserver,
+    case gen_mod:get_module_opt(Host, ?MODULE, welcome_message, {"", ""}) of
+        {"", ""} ->
+            ok;
+        {Subj, Body} ->
+            ejabberd_router:route(
+                jlib:make_jid(<<>>, Host, <<>>),
+                JID,
+                #xmlel{name = <<"message">>, attrs = [{<<"type">>, <<"normal">>}],
+                    children = [#xmlel{name = <<"subject">>,
+                        children = [#xmlcdata{content = Subj}]},
+                        #xmlel{name = <<"body">>,
+                            children = [#xmlcdata{content = Body}]}]});
+        _ ->
+            ok
     end.

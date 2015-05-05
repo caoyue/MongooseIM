@@ -55,8 +55,7 @@
          plain_password_required/1,
          store_type/1,
          entropy/1,
-         activate_user/2,
-         check_phone_and_email/3
+         aft_try_register/4
         ]).
 
 -export([check_digest/4]).
@@ -64,6 +63,7 @@
 -export([auth_modules/1]).
 
 -include("ejabberd.hrl").
+-include("jlib.hrl").
 
 -export_type([authmodule/0]).
 
@@ -230,6 +230,19 @@ try_register(User, Server, Password) ->
             end
     end.
 
+aft_try_register(User, Server, Phone, Nick) ->
+    case lists:member(jlib:nameprep(Server), ?MYHOSTS) of
+        true ->
+            Res = ejabberd_auth_odbc:try_register(User, Server, <<>>, Phone, Nick),
+            case Res of
+                {atomic, ok} ->
+                    ejabberd_hooks:run(register_user, Server, [User, Server]),
+                    {atomic, ok};
+                _ -> Res
+            end;
+        false -> {error, not_allowed}
+    end.
+
 %% register with email or phone number.
 try_register_with_phone_or_email(User, Server, Password, Phone, Email, Nick) ->
     case lists:member(jlib:nameprep(Server), ?MYHOSTS) of
@@ -309,22 +322,6 @@ get_vh_registered_users_number(Server, Opts) ->
                         length(M:get_vh_registered_users(Server))
                 end
         end, auth_modules(Server))).
-
-
-check_phone_and_email(Phone, Email, Server) ->
-    {RegType, Subject} = if (Email /= <<>>) and (Phone =:= <<>>) ->
-                                {<<"email">>, Email};
-                             true ->
-                                {<<"phone">>, Phone}
-                         end,
-    case ejabberd_auth_odbc:user_info_by_phone_or_email(Server, RegType, Subject) of
-        {error, Reason} ->
-            {error, Reason};
-        {info, Data} ->
-            {info, Data};
-        _ -> %% not_exist ->
-            true
-    end.
 
 %% @doc Get the password of the user.
 -spec get_password(User :: ejabberd:user(),
@@ -408,12 +405,6 @@ is_user_exists_in_other_modules_loop([AuthModule | AuthModules], User, Server) -
             maybe
     end.
 
-%% Note: be sure User is exist.
--spec activate_user(User :: ejabberd:user(),
-                    Server :: ejabberd:server()) -> ok | failed.
-activate_user(User, Server) ->
-    ejabberd_auth_odbc:activate_user(User, Server).
-
 %% @doc Remove user.
 %% Note: it may return ok even if there was some problem removing the user.
 -spec remove_user(User :: ejabberd:user(),
@@ -480,7 +471,6 @@ auth_modules() ->
         fun(Server) ->
                 auth_modules(Server)
         end, ?MYHOSTS)).
-
 
 %% Return the list of authenticated modules for a given host
 -spec auth_modules(Server :: ejabberd:server()) -> [authmodule()].

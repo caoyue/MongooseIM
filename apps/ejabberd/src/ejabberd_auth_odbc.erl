@@ -37,7 +37,7 @@
          check_password/3,
          check_password/5,
          try_register/3,
-         try_register/6,
+         try_register/5,
          dirty_get_registered_users/0,
          get_vh_registered_users/1,
          get_vh_registered_users/2,
@@ -50,9 +50,9 @@
          remove_user/3,
          store_type/1,
          plain_password_required/0,
-         activate_user/2,
          phonelist_search/2,
-         user_info_by_phone_or_email/3
+         prepare_password/2,
+         user_info/2
         ]).
 
 -export([login/2, get_password/3]).
@@ -208,42 +208,33 @@ try_register(User, Server, Password) ->
     end.
 
 
-try_register(User, Server, Password, Phone, Email, Nick) ->
-
-    Username = ejabberd_odbc:escape(User),
-    case prepare_password(Server, Password) of
-        false ->
-            {error, invalid_password};
-        Pass ->
-            LServer = jlib:nameprep(Server),
-            %% modify standard vcard format about 'EMAIL' and 'TEL' element.
-            %% assume one 'TEL' in vcard data.
-            %% keep 'NUMBER' in 'TEL' and 'USERID' in 'EMAIL', ignore other subelement.
-            Elements = [{xmlel, TagName, [], [{xmlel, SubTagName, [], [{xmlcdata, Data}]}]}
-                        || {TagName, SubTagName, Data}
-                               <- [{<<"EMAIL">>, <<"USERID">>, Email}, {<<"TEL">>, <<"NUMBER">>, Phone}], Data /= <<>>],
-            VCardXml = {xmlel, <<"vCard">>,
-                        [{<<"xmlns">>, ?NS_VCARD}],
-                        [{xmlel, <<"NICKNAME">>, [], [{xmlcdata, Nick}]} | Elements]},
-            F = fun() ->
-                        case catch odbc_queries:add_user(LServer, Username, Pass, Phone, Email) of
-                            {updated, 1} ->
-                                {ok, VCardSearch} = mod_vcard:prepare_vcard_search_params(User, LServer, VCardXml),
-                                mod_vcard_odbc:set_vcard_with_no_transaction(User, LServer, VCardXml, VCardSearch),
-                                ok;
-                            _ ->
-                                exists
-                        end end,
-            case ejabberd_odbc:sql_transaction(LServer, F) of
-                {atomic, ok} ->
-                    ejabberd_hooks:run(vcard_set, LServer, [User, LServer, VCardXml]),
-                    {atomic, ok};
-                _ ->
-                    {atomic, exists}
-            end
+try_register(Username, Server, _Password, Phone, Nick) ->
+    Nickname = ejabberd_odbc:escape(Nick),
+    Pass = {<<"">>, <<"">>},
+    LServer = jlib:nameprep(Server),
+    %% modify 'TEL' element about standard vcard format as:
+    %% 1.only one 'TEL' in vcard; 2.keep 'NUMBER' in 'TEL', other element ignored.
+    %% vcard format: <VCARD> <TEL> <NUMBER>1388888888</NUMBER> </TEL> ...</VCARD>
+    VCardXml = {xmlel, <<"vCard">>,
+        [{<<"xmlns">>, ?NS_VCARD}],
+        [{xmlel, <<"NICKNAME">>, [], [{xmlcdata, Nickname}]},
+         {xmlel, <<"TEL">>, [], [{xmlel, <<"NUMBER">>, [], [{xmlcdata, Phone}]}]}]},
+    F = fun() ->
+        case catch odbc_queries:add_user(LServer, Username, Pass, Phone, <<>>) of
+            {updated, 1} ->
+                {ok, VCardSearch} = mod_vcard:prepare_vcard_search_params(Username, LServer, VCardXml),
+                mod_vcard_odbc:set_vcard_with_no_transaction(Username, LServer, VCardXml, VCardSearch),
+                ok;
+            _ ->
+                exists
+        end end,
+    case ejabberd_odbc:sql_transaction(LServer, F) of
+        {atomic, ok} ->
+            ejabberd_hooks:run(vcard_set, LServer, [Username, LServer, VCardXml]),
+            {atomic, ok};
+        _ ->
+            {atomic, exists}
     end.
-
-
 
 -spec dirty_get_registered_users() -> [ejabberd:simple_jid()].
 dirty_get_registered_users() ->
@@ -301,24 +292,6 @@ get_vh_registered_users_number(Server, Opts) ->
             0
     end.
 
-%% Note: be sure User is exist.
--spec activate_user(User :: ejabberd:user(),
-                    Server :: ejabberd:server()) -> ok | failed.
-activate_user(User, Server) ->
-    case jlib:nodeprep(User) of
-        error ->
-            false;
-        LUser ->
-            Username = ejabberd_odbc:escape(LUser),
-            LServer = jlib:nameprep(Server),
-            case catch odbc_queries:activate_user(Username, LServer) of
-                ok ->
-                    ok;
-                _ ->
-                    failed
-            end
-    end.
-
 phonelist_search(PhoneList, LServer) ->
     lists:foldl(fun(E, R) ->
                         case catch ejabberd_odbc:sql_query(LServer, [<<"select username from users where cellphone='">>, E, <<"';">>]) of
@@ -350,6 +323,8 @@ get_password(User, Server) ->
 do_get_password(User, Server) ->
     LServer = jlib:nameprep(Server),
     case catch odbc_queries:get_password(LServer, User) of
+        {selected, [<<"username">>, <<"password">>, <<"pass_details">>], [{Username, <<>>, <<>>}]} ->
+            false;
         {selected, [<<"username">>, <<"password">>, <<"pass_details">>], [{Username, Password, null}]} ->
             {Username, Password}; %%Plain password
         {selected, [<<"username">>, <<"password">>, <<"pass_details">>], [{Username, _Password, PassDetails}]} ->
@@ -514,37 +489,16 @@ scram_passwords1(LServer, Count, Interval, ScramIterationCount) ->
 login(_User, _Server) -> erlang:error(not_implemented).
 get_password(_User, _Server, _DefaultValue) -> erlang:error(not_implemented).
 
-%% @doc get user information from users.
-user_info_by_phone_or_email(Server, Type, Subject) ->
+user_info(Server, Phone) ->
     LServer = jlib:nameprep(Server),
-    SSubject = ejabberd_odbc:escape(Subject),
-    case Type of
-        <<"phone">> ->
-            Sel = <<"select username, password, pass_details, email from users where cellphone='">>,
-            try ejabberd_odbc:sql_query(LServer, [Sel, SSubject, <<"';">>]) of
-                {selected, [<<"username">>, <<"password">>, <<"pass_details">>, <<"email">>],
-                    [{UserName, Password, PasswordDetails, EMail}]} ->
-                    {info,[{<<"username">>, UserName}, {<<"password">>, Password}, {<<"pass_details">>, PasswordDetails},
-                         {<<"email">>, EMail}]};
-                {selected, [<<"username">>, <<"password">>, <<"pass_details">>, <<"email">>], [] } ->
-                    not_exist;
-                {error, Error} ->
-                    {error, Error} %% Typical error is that table doesn't exist
-            catch
-                _:B -> {error, B} %% Typical error is database not accessible
-            end;
-        _ ->
-            Sel = <<"select username, password, pass_details,cellphone from users where email='">>,
-            try ejabberd_odbc:sql_query(LServer, [Sel, SSubject, <<"';">>]) of
-                {selected, [<<"username">>, <<"password">>, <<"pass_details">>, <<"cellphone">>],
-                    [{UserName, Password, PasswordDetails, Cellphone}]} ->
-                    {info, [{<<"username">>, UserName}, {<<"password">>, Password}, {<<"pass_details">>, PasswordDetails},
-                         {<<"phone">>, Cellphone}]};
-                {selected, [<<"username">>, <<"password">>, <<"pass_details">>,  <<"cellphone">>], [] } ->
-                    not_exist;
-                {error, Error} ->
-                    {error, Error} %% Typical error is that table doesn't exist
-            catch
-                _:B -> {error, B} %% Typical error is database not accessible
-            end
+    Sel = ["select username, password, pass_details from users where cellphone='"],
+    try ejabberd_odbc:sql_query(LServer, [Sel, Phone, "';"]) of
+        {selected, [<<"username">>, <<"password">>, <<"pass_details">>], [{UserName, Password, PasswordDetails}]} ->
+            {info, {UserName, Password, PasswordDetails}};
+        {selected, [<<"username">>, <<"password">>, <<"pass_details">>], []} ->
+            not_exist;
+        {error, Error} ->
+            {error, Error} %% Typical error is that table doesn't exist
+    catch
+        _:B -> {error, B} %% Typical error is database not accessible
     end.

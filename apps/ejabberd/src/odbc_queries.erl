@@ -101,7 +101,6 @@
          remove_old_offline_messages/2,
          remove_expired_offline_messages/2,
          remove_offline_messages/3,
-         activate_user/2,
          set_vcard_with_no_transaction/28]).
 
 %% We have only two compile time options for db queries:
@@ -261,7 +260,7 @@ get_password(LServer, User) ->
                      end,
     ejabberd_odbc:sql_query(
       LServer,
-      [<<"select username, password, pass_details from users where active=1 and ">>,
+      [<<"select username, password, pass_details from users where ">>,
           Field, <<"='">>, Value, <<"';">>]).
 
 set_password_t(LServer, Username, {Pass, PassDetails}) ->
@@ -1203,11 +1202,3 @@ set_roster_version(Username, Version) ->
       LServer,
       ["EXECUTE dbo.set_roster_version '", Username, "', '", Version, "'"]).
 -endif.
-
-activate_user(Username, LServer) ->
-    ejabberd_odbc:sql_transaction(
-      LServer,
-      fun() ->
-              update_t(<<"users">>, [<<"active">>], [<<"1">>], [<<"username='">>, Username, <<"'">>])
-      end),
-    ok.

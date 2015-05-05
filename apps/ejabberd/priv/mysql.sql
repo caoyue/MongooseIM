@@ -21,17 +21,18 @@
 
 CREATE TABLE users (
     username varchar(250) PRIMARY KEY,
-    password text NOT NULL,
+    password text,
     pass_details text,
+    id varchar(50),
     email varchar(250),
     cellphone varchar(50),
     token varchar(250),
-    active boolean DEFAULT true,
     created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) CHARACTER SET utf8;
 
 CREATE INDEX i_users_email ON users(email);
 CREATE INDEX i_users_cellphone ON users(cellphone);
+
 
 CREATE TABLE last (
     username varchar(250) PRIMARY KEY,
