@@ -13,11 +13,6 @@
     private::binary()
 }).
 
--record(template, {
-    id :: binary(),
-    name :: binary()
-}).
-
 -record(node, {
     id :: integer() | binary()|undefined,
     name :: binary(),
