@@ -360,6 +360,15 @@ CREATE INDEX push_jid_index ON push_service (jid);
 CREATE UNIQUE INDEX push_token_index ON push_service (token);
 -- push service end
 
+-- mms_file begin
+CREATE TABLE mms_file (
+    uid varchar(64) PRIMARY KEY,
+    filename varchar(250) CHARACTER SET binary NOT NULL,
+    owner varchar(250) CHARACTER SET binary NOT NULL,
+    created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) CHARACTER SET utf8;
+-- mms_file end
+
 -- organization begin
 CREATE TABLE organization (
     id int PRIMARY KEY NOT NULL auto_increment,
@@ -389,6 +398,14 @@ CREATE TABLE project (
     start_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     end_at timestamp
 ) CHARACTER SET utf8;
--- organization end
 
+CREATE TABLE project_link (
+    id1 int NOT NULL,
+    id2 int NOT NULL
+) CHARACTER SET utf8;
+CREATE UNIQUE INDEX i_project_link_id1_id2 ON project_link(id1, id2);
+CREATE INDEX i_project_link_id1 ON project_link(id1);
+CREATE INDEX i_project_link_id2 ON project_link(id2);
+
+-- organization end
 

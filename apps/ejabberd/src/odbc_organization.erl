@@ -505,7 +505,6 @@ search_project(LServer, ProjectName) ->
             {error, Reason}
     end.
 
-
 -spec get_admin(binary(), odbc_organization:pro_type()) -> {ok, list()} | {error, _}.
 get_admin(LServer, Project) ->
     Query = ["select admin from project where id='", Project, "';"],
