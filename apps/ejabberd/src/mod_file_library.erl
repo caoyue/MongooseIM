@@ -108,14 +108,21 @@ add_root_folder(#jid{lserver = LServer, luser = LUser}, _To, #iq{sub_el = SubEl}
                     make_error_reply(IQ, ?REQUEST_PARAM_ERROR);
                 false ->
                     Jid = make_jid(LServer, LUser),
-                    case odbc_file_library:add_root_folder(LServer, Folder#folder{created_by = Jid}) of
-                        {ok, F} ->
-                            IQ#iq{type = result, sub_el = SubEl#xmlel{
-                                children = [record_to_xml(folder, F, record_info(fields, folder))]
-                            }};
-                        {error, duplicate_name} ->
-                            make_error_reply(IQ, ?DUPLICATE_FOLDER_NAME);
-                        {error, _} ->
+                    case odbc_file_library:is_in_project(LServer, Jid, Folder#folder.project) of
+                        true ->
+                            case odbc_file_library:add_root_folder(LServer, Folder#folder{created_by = Jid}) of
+                                {ok, F} ->
+                                    IQ#iq{type = result, sub_el = SubEl#xmlel{
+                                        children = [record_to_xml(folder, F, record_info(fields, folder))]
+                                    }};
+                                {error, duplicate_name} ->
+                                    make_error_reply(IQ, ?DUPLICATE_FOLDER_NAME);
+                                {error, _} ->
+                                    make_error_reply(IQ, ?OBJECT_NOT_EXISTS)
+                            end;
+                        false ->
+                            make_error_reply(IQ, ?FOLDER_READ_DENY);
+                        error ->
                             make_error_reply(IQ, ?OBJECT_NOT_EXISTS)
                     end
             end

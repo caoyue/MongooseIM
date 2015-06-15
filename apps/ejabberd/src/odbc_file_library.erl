@@ -1,6 +1,7 @@
 -module(odbc_file_library).
 
 -export([
+    is_in_project/3,
     allow_folder_view/3,
     allow_file_view/3,
     allow_add/3,
@@ -24,6 +25,20 @@
 %% ==================================
 %% permission
 %% ==================================
+
+%% is user in project
+-spec is_in_project(binary(), binary(), bint()) -> false | true | error.
+is_in_project(LServer, Jid, ProjectId) ->
+    Query = [<<"select count(o.id) from organization as o left join organization_user as u on u.organization = o.id where u.jid = '">>,
+        Jid, "' and o.project = ", ProjectId],
+    case ejabberd_odbc:sql_query(LServer, Query) of
+        {selected, _, [<<"0">>]} ->
+            false;
+        {selected, _, _} ->
+            true;
+        _ ->
+            error
+    end.
 
 %% @doc is user allowed to view this folder
 -spec allow_folder_view(binary(), bint(), bint()) -> true | false | {error, _}.
@@ -67,7 +82,7 @@ allow_file_view(LServer, FileId, Jid) ->
     F = fun() ->
         Query0 = [<<"select uploaded_by,folder from library_file where id = ">>, FileId, ";"],
         case ejabberd_odbc:sql_query_t(Query0) of
-            {selected,_,[]} ->
+            {selected, _, []} ->
                 not_exists;
             {selected, _, [{Jid, _}]} ->
                 true;
