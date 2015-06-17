@@ -4,9 +4,9 @@
 %% ===============================
 
 -record(group, {
-    id :: binary() | integer(),
-    name :: binary(),
-    owner :: binary()|ejabberd:jid(),
+    groupid :: binary() | integer(),
+    groupname :: binary(),
+    master :: binary()|ejabberd:jid(),
     type :: binary() | integer(),
     status :: binary() | integer(),
     project :: binary() | integer(),
@@ -38,3 +38,13 @@
     start_at :: binary(),
     end_at :: binary()|undefined
 }).
+
+%% define group type
+-define(NORAML_GROUP,<<"1">>).
+-define(TASK_GROUP,<<"2">>).
+-define(EVENT_GROUP,<<"3">>).
+-define(FILE_GROUP,<<"4">>).
+
+%% define group status
+-define(STATUS_START,<<"1">>).
+-define(STATUS_END,<<"2">>).
