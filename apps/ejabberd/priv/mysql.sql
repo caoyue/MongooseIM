@@ -405,7 +405,7 @@ CREATE TABLE project (
 CREATE TABLE project_link (
     id1 int NOT NULL,
     id2 int NOT NULL,
-    PRIMARY KEY (id1, id2),
+    PRIMARY KEY (id1, id2)
 ) CHARACTER SET utf8;
 
 -- organization end

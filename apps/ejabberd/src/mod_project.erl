@@ -82,8 +82,8 @@ get_project(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = get, sub_el = SubEl} 
             IQ#iq{type = error, sub_el = [SubEl, Error]};
         {ok, Result} ->
             IQ#iq{type = result,
-                sub_el = [SubEl#xmlel{attrs = [{<<"xmlns">>, ?NS_AFT_PROJECT}, {<<"type">>, <<"get_project">>}],
-                    children = [{xmlcdata, Result}]}]}
+                  sub_el = [SubEl#xmlel{attrs = [{<<"xmlns">>, ?NS_AFT_PROJECT}, {<<"type">>, <<"get_project">>}],
+                                        children = [{xmlcdata, Result}]}]}
     end;
 get_project(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
@@ -197,8 +197,8 @@ add_job(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl} = IQ
             Content = <<"{\"job_tag\":\"", JobTag/binary, "\"}">>,
             push_message(ProID, S, AllMembers, <<"add_job">>, Content),
             IQ#iq{type = result,
-                sub_el = [SubEl#xmlel{attrs = [{<<"xmlns">>, ?NS_AFT_PROJECT}, {<<"type">>, <<"add_job">>}],
-                    children = [{xmlcdata, Result}]}]}
+                  sub_el = [SubEl#xmlel{attrs = [{<<"xmlns">>, ?NS_AFT_PROJECT}, {<<"type">>, <<"add_job">>}],
+                                        children = [{xmlcdata, Result}]}]}
     end;
 add_job(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
@@ -211,41 +211,41 @@ add_member(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl} =
     {_, Members} = lists:keyfind(<<"member">>, 1, Data),
 
     if length(Members) > 0 ->
-        Ls = parse_json_list([<<"job_id">>, <<"jid">>], Members, []),
-        case add_member_ex(S, ProID, BaseJID, Ls) of
-            {error, Error} ->
-                IQ#iq{type = error, sub_el = [SubEl, Error]};
-            {ok, MemberTag, ValidMembers} ->
-                Content1 = [{struct, [{<<"job_id">>, V1}, {<<"jid">>, V2}]} || {V1, V2} <- ValidMembers],
-                F = mochijson2:encoder([{utf8, true}]),
-                Content = iolist_to_binary(F({struct, [{<<"project">>, ProID}, {<<"member_tag">>, MemberTag}, {<<"member">>, Content1}]})) ,
-                case odbc_organization:get_all_jid(S, ProID) of
-                    {ok, Result} ->
-                        push_message(ProID, S, Result, <<"add_member">>, Content),
-                        %% push notice to all link project members.
-                        case odbc_organization:get_link_project(S, ProID) of
-                            {ok, Result1} ->
-                                lists:foreach(fun({Project}) ->
-                                    case odbc_organization:get_all_jid(S, Project) of
-                                        {ok, Result2} ->
-                                            push_message(ProID, S, Result2, <<"add_member">>, Content),
-                                            IQ#iq{type = result};
-                                        _ ->
-                                            %% if failed how to synchronous to client.
-                                            ?ERROR_MSG("[Project:~p] push add member msg failed.", [ProID]),
-                                            IQ#iq{type = result}
-                                    end
-                                end,
-                                    Result1);
-                            {error, _} ->
-                                IQ#iq{type = error, sub_el = [?AFT_ERR_DATABASE]}
-                        end;
-                    _ ->
-                        IQ#iq{type = error, sub_el = [SubEl, ?AFT_ERR_DATABASE]}
-                end,
-                IQ#iq{type = result}
-        end;
-        true ->
+            Ls = parse_json_list([<<"job_id">>, <<"jid">>], Members, []),
+            case add_member_ex(S, ProID, BaseJID, Ls) of
+                {error, Error} ->
+                    IQ#iq{type = error, sub_el = [SubEl, Error]};
+                {ok, MemberTag, ValidMembers} ->
+                    Content1 = [{struct, [{<<"job_id">>, V1}, {<<"jid">>, V2}]} || {V1, V2} <- ValidMembers],
+                    F = mochijson2:encoder([{utf8, true}]),
+                    Content = iolist_to_binary(F({struct, [{<<"project">>, ProID}, {<<"member_tag">>, MemberTag}, {<<"member">>, Content1}]})) ,
+                    case odbc_organization:get_all_jid(S, ProID) of
+                        {ok, Result} ->
+                            push_message(ProID, S, Result, <<"add_member">>, Content),
+                            %% push notice to all link project members.
+                            case odbc_organization:get_link_project(S, ProID) of
+                                {ok, Result1} ->
+                                    lists:foreach(fun({Project}) ->
+                                                          case odbc_organization:get_all_jid(S, Project) of
+                                                              {ok, Result2} ->
+                                                                  push_message(ProID, S, Result2, <<"add_member">>, Content),
+                                                                  IQ#iq{type = result};
+                                                              _ ->
+                                                                  %% if failed how to synchronous to client.
+                                                                  ?ERROR_MSG("[Project:~p] push add member msg failed.", [ProID]),
+                                                                  IQ#iq{type = result}
+                                                          end
+                                                  end,
+                                                  Result1);
+                                {error, _} ->
+                                    IQ#iq{type = error, sub_el = [?AFT_ERR_DATABASE]}
+                            end;
+                        _ ->
+                            IQ#iq{type = error, sub_el = [SubEl, ?AFT_ERR_DATABASE]}
+                    end,
+                    IQ#iq{type = result}
+            end;
+       true ->
             IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}
     end;
 add_member(_, _, IQ) ->
@@ -270,17 +270,17 @@ delete_member(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl
                     case odbc_organization:get_link_project(S, ProID) of
                         {ok, Result1} ->
                             lists:foreach(fun({Project}) ->
-                                case odbc_organization:get_all_jid(S, Project) of
-                                    {ok, Result2} ->
-                                        push_message(ProID, S, Result2, <<"delete_member">>, Content),
-                                        IQ#iq{type = result};
-                                    _ ->
-                                        %% if failed how to synchronous to client.
-                                        ?ERROR_MSG("[Project:~p] push delete member msg failed.", [ProID]),
-                                        IQ#iq{type = result}
-                                end
-                                end,
-                                Result1);
+                                                  case odbc_organization:get_all_jid(S, Project) of
+                                                      {ok, Result2} ->
+                                                          push_message(ProID, S, Result2, <<"delete_member">>, Content),
+                                                          IQ#iq{type = result};
+                                                      _ ->
+                                                          %% if failed how to synchronous to client.
+                                                          ?ERROR_MSG("[Project:~p] push delete member msg failed.", [ProID]),
+                                                          IQ#iq{type = result}
+                                                  end
+                                          end,
+                                          Result1);
                         {error, _} ->
                             IQ#iq{type = error, sub_el = [SubEl, ?AFT_ERR_DATABASE]}
                     end;
@@ -300,9 +300,9 @@ list_member(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = get, sub_el = SubEl} 
 
     {_, Project} = lists:keyfind(<<"project">>, 1, Data),
     ProjectTarget = case lists:keyfind(<<"project_target">>, 1, Data) of
-                         false -> false;
-                         {_, Target} -> Target
-                     end,
+                        false -> false;
+                        {_, Target} -> Target
+                    end,
 
     case list_member_ex(S, Project, BaseJID, ProjectTarget) of
         {error, Error} ->
@@ -346,7 +346,7 @@ subscribe(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl} = 
             {ok, [{ProNameSelf}]} = odbc_organization:project_name(S, IDSelf),
             {ok, [{ProNameTarget}]} = odbc_organization:project_name(S, IDTarget),
             Content = <<"{\"id_self\":\"", IDTarget/binary, "\", \"name_self\":\"", ProNameTarget/binary,
-            "\", \"id_target\":\"", IDSelf/binary, "\", \"name_target\":\"", ProNameSelf/binary, "\"}">>,
+                        "\", \"id_target\":\"", IDSelf/binary, "\", \"name_target\":\"", ProNameSelf/binary, "\"}">>,
             case get_admin(S, IDTarget) of
                 {true, Admin} ->
                     push_message(IDSelf, S, [{Admin}], atom_to_binary(Type, latin1), Content);
@@ -360,15 +360,15 @@ subscribe(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl} = 
             {ok, IDSelf_Member} = odbc_organization:get_all_jid(S, IDSelf),
             {ok, IDTarget_Member} = odbc_organization:get_all_jid(S, IDTarget),
             Content1 = <<"{\"id_self\":\"", IDSelf/binary, "\", \"name_self\":\"", ProNameSelf/binary, "\", \"link_tag\":\"", LinkTag/binary,
-            "\", \"id_target\":\"", IDTarget/binary, "\", \"name_target\":\"", ProNameTarget/binary, "\"}">>,
+                         "\", \"id_target\":\"", IDTarget/binary, "\", \"name_target\":\"", ProNameTarget/binary, "\"}">>,
             Content2 = <<"{\"id_self\":\"", IDTarget/binary, "\", \"name\":\"", ProNameTarget/binary, "\", \"link_tag\":\"", LinkTag/binary,
-            "\", \"id_target\":\"", IDSelf/binary, "\", \"name_target\":\"", ProNameSelf/binary, "\"}">>,
+                         "\", \"id_target\":\"", IDSelf/binary, "\", \"name_target\":\"", ProNameSelf/binary, "\"}">>,
             push_message(IDSelf, S, IDSelf_Member, atom_to_binary(Type, latin1), Content1),
             push_message(IDTarget, S, IDTarget_Member, atom_to_binary(Type, latin1), Content2),
             IQ#iq{type = result}
     end;
 subscribe(_, _, IQ, _) ->
-     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
+    IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
 
 search_project(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, sub_el = SubEl} = IQ) ->
     #jid{server = S} = From,
@@ -418,9 +418,9 @@ get_project_ex(LServer, BaseJID, ProID) ->
             {ok, Result} = odbc_organization:get_project(LServer, ProID),
             F = mochijson2:encoder([{utf8, true}]),
             Json1 = [{struct, [{"id", R1}, {"name", R2}, {"description", R3}, {"status", R4},
-                {"admin", R5}, {"start_time", R6}, {"end_time", R7}, {"job_tag", R8},
-                {"member_tag", R9}, {"link_tag", R10}]}
-                || {R1, R2, R3, R4, R5, R6, R7, R8, R9, R10} <- Result ],
+                               {"admin", R5}, {"start_time", R6}, {"end_time", R7}, {"job_tag", R8},
+                               {"member_tag", R9}, {"link_tag", R10}]}
+                     || {R1, R2, R3, R4, R5, R6, R7, R8, R9, R10} <- Result ],
             Json = iolist_to_binary( F( Json1 ) ),
             {ok, Json};
         false ->
@@ -429,18 +429,18 @@ get_project_ex(LServer, BaseJID, ProID) ->
 
 list_project_ex(LServer, BaseJID, Type) ->
     R = case Type of
-        list_project ->
-            odbc_organization:list_project(LServer, BaseJID, false);
-        list_template ->
-            odbc_organization:list_project(LServer, BaseJID, true)
+            list_project ->
+                odbc_organization:list_project(LServer, BaseJID, false);
+            list_template ->
+                odbc_organization:list_project(LServer, BaseJID, true)
         end,
     case R of
         {ok, Result} ->
             F = mochijson2:encoder([{utf8, true}]),
             Json1 = [{struct, [{"id", R1}, {"name", R2}, {"description", R3}, {"status", R4},
-                {"admin", R5}, {"start_time", R6}, {"end_time", R7}, {"job_tag", R8},
-                {"member_tag", R9}, {"link_tag", R10}]}
-                || {R1, R2, R3, R4, R5, R6, R7, R8, R9, R10} <- Result ],
+                               {"admin", R5}, {"start_time", R6}, {"end_time", R7}, {"job_tag", R8},
+                               {"member_tag", R9}, {"link_tag", R10}]}
+                     || {R1, R2, R3, R4, R5, R6, R7, R8, R9, R10} <- Result ],
             Json = iolist_to_binary( F( Json1 ) ),
             {ok, Json};
         {error, _Reason} ->
@@ -457,7 +457,7 @@ get_structure_ex(LServer, BaseJID, ProID) ->
         true ->
             {ok, Result} = odbc_organization:get_structure(LServer, ProID),
             Json1 = [{struct,[{<<"id">>, R1}, {<<"name">>, R2}, {<<"left">>, R3}, {<<"right">>, R4}, {<<"part">>, R5}]}
-                || {R1, R2, R3, R4, R5}<- Result],
+                     || {R1, R2, R3, R4, R5}<- Result],
             F = mochijson2:encoder([{utf8, true}]),
             Json = iolist_to_binary( F( {struct, [{<<"project">>, ProID}, {<<"structure">>, Json1}]} )),
             {ok, Json};
@@ -474,12 +474,12 @@ create_ex(LServer, ProjectName, BaseJID, Template, Job) ->
                 {ok, true} ->
                     case odbc_organization:add_project(LServer, #project{name = ProjectName, description = <<"">>, admin = BaseJID}, Template, Job) of
                         {ok, #project{id = Id, name = _Name, description = _Desc, job_tag = JobTag, start_at = StartTime},
-                            #node{id = JobId, name=JobName, department = Part}} ->
+                         #node{id = JobId, name=JobName, department = Part}} ->
                             {ok, <<"{\"project\":{\"id\":\"", Id/binary, "\",\"name\":\"", ProjectName/binary,
-                            "\",\"job_tag\":\"", JobTag/binary, "\",\"member_tag\":\"", JobTag/binary,
-                            "\",\"link_tag\":\"", JobTag/binary, "\",\"start_time\":\"", StartTime/binary, "\"},
+                                   "\",\"job_tag\":\"", JobTag/binary, "\",\"member_tag\":\"", JobTag/binary,
+                                   "\",\"link_tag\":\"", JobTag/binary, "\",\"start_time\":\"", StartTime/binary, "\"},
                              \"member\":{\"jid\":\"", BaseJID/binary, "\",\"job_id\":\"", JobId/binary,
-                            "\",\"job_name\":\"", JobName/binary, "\",\"part\":\"", Part/binary, "\"}}">>};
+                                   "\",\"job_name\":\"", JobName/binary, "\",\"part\":\"", Part/binary, "\"}}">>};
                         {error, _} ->
                             ?ERROR_MSG("Create Project failed, ProjectName=~p.", [ProjectName]),
                             {error, ?AFT_ERR_DATABASE}
@@ -574,7 +574,7 @@ list_children_jobs_ex(LServer, JID, ProID) ->
             {ok, Result} = odbc_organization:get_all_nodes(LServer, ProID),
             %%{ok, build_json(["job_id", "job_name", "part"], Result, true, ProID)};
             Json = [{struct, [{<<"job_id">>, R1}, {<<"job_name">>, R2}, {<<"part">>, R3}]}
-                || {R1, R2, R3} <- Result],
+                    || {R1, R2, R3} <- Result],
             F = mochijson2:encoder([{utf8, true}]),
             {ok, iolist_to_binary(F({struct, [{<<"project">>, ProID}, {<<"job">>, Json}]}))};
         false ->
@@ -583,9 +583,9 @@ list_children_jobs_ex(LServer, JID, ProID) ->
                     {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH};
                 {ok, [{JobID}]} ->
                     {ok, Result} = odbc_organization:get_children_job(LServer, JobID, ProID),
-                    %{ok, build_json(["job_id", "job_name", "part"], Result, true, ProID)}
+                                                %{ok, build_json(["job_id", "job_name", "part"], Result, true, ProID)}
                     Json = [{struct, [{<<"job_id">>, R1}, {<<"job_name">>, R2}, {<<"part">>, R3}]}
-                        || {R1, R2, R3} <- Result],
+                            || {R1, R2, R3} <- Result],
                     F = mochijson2:encoder([{utf8, true}]),
                     {ok, iolist_to_binary(F({struct, [{<<"project">>, ProID}, {<<"job">>, Json}]}))}
             end;
@@ -601,29 +601,29 @@ check_add_member_valid(LServer, ProID, BaseJID, List) ->
     case odbc_organization:get_structure(LServer, ProID) of
         {ok, Result} ->
             {ValidJobList, _InvalidJobList} = lists:partition(
-                fun({E_ID, _}) ->
-                    case lists:keyfind(E_ID, 1, Result) of
-                        false -> false;
-                        _ -> true
-                    end
-                end,
-                List),
+                                                fun({E_ID, _}) ->
+                                                        case lists:keyfind(E_ID, 1, Result) of
+                                                            false -> false;
+                                                            _ -> true
+                                                        end
+                                                end,
+                                                List),
             {ok, Result2} = odbc_organization:get_all(LServer, ProID),
             ExistList = lists:filtermap(
-                fun({E_JID, E_ID, _E_Name, _E_Part}) ->
-                    {true, {E_ID, E_JID}}
-                end,
-                Result2),
+                          fun({E_JID, E_ID, _E_Name, _E_Part}) ->
+                                  {true, {E_ID, E_JID}}
+                          end,
+                          Result2),
             {ValidList, _DuplicationList} = lists:partition(
-                fun(E) ->
-                    case lists:member(E, ExistList) of
-                        false -> true;
-                        _ -> false
-                    end
-                end,
-                ValidJobList),
+                                              fun(E) ->
+                                                      case lists:member(E, ExistList) of
+                                                          false -> true;
+                                                          _ -> false
+                                                      end
+                                              end,
+                                              ValidJobList),
             ?ERROR_MSG("add_member invalid job list:~p~n,duplication list:~p",
-                [_InvalidJobList, _DuplicationList]),
+                       [_InvalidJobList, _DuplicationList]),
             {ok, ValidList};
         _ ->
             {error, ?AFT_ERR_DATABASE}
@@ -639,13 +639,13 @@ add_member_ex(LServer, ProID, BaseJID, List) ->
                             {error, Error};
                         {ok, ValidList} ->
                             if length(ValidList) > 0 ->
-                                case odbc_organization:add_employees(LServer, ProID, BaseJID, ValidList) of
-                                    {ok, MemberTag} ->
-                                        {ok, MemberTag, ValidList};
-                                    {error, _Reason} ->
-                                        {error, ?AFT_ERR_DATABASE}
-                                end;
-                                true ->
+                                    case odbc_organization:add_employees(LServer, ProID, BaseJID, ValidList) of
+                                        {ok, MemberTag} ->
+                                            {ok, MemberTag, ValidList};
+                                        {error, _Reason} ->
+                                            {error, ?AFT_ERR_DATABASE}
+                                    end;
+                               true ->
                                     {error, ?AFT_ERR_MEMBER_INVALID}
                             end
                     end;
@@ -684,8 +684,8 @@ add_job_ex(LServer, ProID, BaseJID, ParentJobID, JobName, Part) ->
                             if ParentPart =:= Part ->
                                 case odbc_organization:add_node(LServer, ParentJobID, #node{name = JobName, department = Part}) of
                                     {ok, JobTag, #node{id = Id, lft = Left, rgt = Right}} ->
-                                        {ok, build_json([{"project", ProID},{"job", {["id", "name", "left", "right", "part"],
-                                            [{Id, JobName, Left, Right, Part}], false}}], <<>>), JobTag}
+                                        {ok, build_json([{"project", ProID}, {"job", {["id", "name", "left", "right", "part"],
+                                            [{Id, JobName, Left, Right, Part}], false}}], <<>>), JobTag};
                                     {error, _} ->
                                         {error, ?AFT_ERR_DATABASE}
                                 end;
@@ -696,7 +696,7 @@ add_job_ex(LServer, ProID, BaseJID, ParentJobID, JobName, Part) ->
                                                 true ->
                                                     case odbc_organization:add_node(LServer, ParentJobID, #node{name = JobName, department = Part}) of
                                                         {ok, JobTag, #node{id = Id, lft = Left, rgt = Right}} ->
-                                                            {ok, build_json([{"project", ProID},{"job", {["id", "name", "left", "right", "part"],
+                                                            {ok, build_json([{"project", ProID}, {"job", {["id", "name", "left", "right", "part"],
                                                                 [Id, JobName, Left, Right, Part], false}}], <<>>), JobTag};
                                                         {error, _} ->
                                                             {error, ?AFT_ERR_DATABASE}
@@ -738,7 +738,7 @@ list_member_ex(LServer, ProID, BaseJID, ProjectTarget) ->
                     {ok, Result} = odbc_organization:get_all(LServer, ProID),
                     %%{ok, build_json([ {"project", ProID}, {"member", {["jid", "job_id", "job_name", "part"], Result, true}} ], <<>>)};
                     Json = [{struct, [{<<"jid">>, R1}, {<<"job_id">>, R2}, {<<"job_name">>, R3}, {<<"part">>, R4}]}
-                        || {R1, R2, R3, R4} <- Result],
+                            || {R1, R2, R3, R4} <- Result],
                     F = mochijson2:encoder([{utf8, true}]),
                     {ok, iolist_to_binary(F({struct, [{<<"project">>, ProID}, {<<"member">>, Json}]}))};
                 _ ->
@@ -747,7 +747,7 @@ list_member_ex(LServer, ProID, BaseJID, ProjectTarget) ->
                             {ok, Result} = odbc_organization:get_all(LServer, ProjectTarget),
                             %%{ok, build_json([ {"project", ProjectTarget}, {"member", {["jid", "job_id", "job_name", "part"], Result, true}} ], <<>>)};
                             Json = [{struct, [{<<"jid">>, R1}, {<<"job_id">>, R2}, {<<"job_name">>, R3}, {<<"part">>, R4}]}
-                                || {R1, R2, R3, R4} <- Result],
+                                    || {R1, R2, R3, R4} <- Result],
                             F = mochijson2:encoder([{utf8, true}]),
                             {ok, iolist_to_binary(F({struct, [{<<"project">>, ProjectTarget}, {<<"member">>, Json}]}))};
                         {ok, false} ->
@@ -839,7 +839,7 @@ is_admin(LServer, BaseJID, ProID) ->
             false;
         {ok, [{Admin}]} ->
             if Admin =:= BaseJID -> true;
-                true -> false
+               true -> false
             end;
         {error, _Reason} ->
             failed
@@ -854,20 +854,20 @@ push_message(ProID, Server, ToList, Type, Contents) ->
     SubAttrs = [{<<"xmlns">>, ?NS_AFT_PROJECT}, {<<"type">>, Type}, {<<"projectid">>, ProID}],
     Packet = {xmlel, <<"message">>, [], [{xmlel, <<"sys">>, SubAttrs, [{xmlcdata, Contents}]}]},
     lists:foreach(
-        fun(ToIn) ->
-            {To} = ToIn,
-            ToAttr = {<<"to">>, To},
-            ejabberd_router:route(FromJID, jlib:binary_to_jid(To),
-                Packet#xmlel{attrs = [FromAttr, ToAttr, TypeAttr, LangAttr]})
-        end,
-        ToList).
+      fun(ToIn) ->
+              {To} = ToIn,
+              ToAttr = {<<"to">>, To},
+              ejabberd_router:route(FromJID, jlib:binary_to_jid(To),
+                                    Packet#xmlel{attrs = [FromAttr, ToAttr, TypeAttr, LangAttr]})
+      end,
+      ToList).
 
 build_item([], [], Result) ->
     Result;
 build_item([F1 | T1], [F2 | T2], Result) ->
     NF2 = if F2 =:= null -> <<>>; true -> F2 end,
     NewResult = if Result =:= <<>> ->
-                   iolist_to_binary([Result, "\"", F1, "\":\"", NF2, "\""]);
+                        iolist_to_binary([Result, "\"", F1, "\":\"", NF2, "\""]);
                    true -> iolist_to_binary([Result, ", \"", F1, "\":\"", NF2, "\""])
                 end,
     build_item(T1, T2, NewResult).
@@ -875,23 +875,23 @@ build_item([F1 | T1], [F2 | T2], Result) ->
 build_json([{Key, {ItemNameList, TupleItemValueList, AddBracket}} | Tail], Result) ->
     Count = length(TupleItemValueList),
     Array = lists:foldl(
-        fun(E, AccIn) ->
-            AccIn1 = if AccIn =:= <<>> -> AccIn;
-                         true -> <<AccIn/binary, ",">>
-                     end,
-            Item = build_item(ItemNameList, tuple_to_list(E), <<>>),
-            if Item =:= <<>> -> AccIn1;
-                true -> <<AccIn1/binary, "{", Item/binary, "}">>
-            end
-        end,
-        <<>>, TupleItemValueList),
+              fun(E, AccIn) ->
+                      AccIn1 = if AccIn =:= <<>> -> AccIn;
+                                  true -> <<AccIn/binary, ",">>
+                               end,
+                      Item = build_item(ItemNameList, tuple_to_list(E), <<>>),
+                      if Item =:= <<>> -> AccIn1;
+                         true -> <<AccIn1/binary, "{", Item/binary, "}">>
+                      end
+              end,
+              <<>>, TupleItemValueList),
     Temp = if (Result =:= <<>>) or (Array =:=<<>>) -> Result;
-               true -> <<Result/binary, ",">>
+              true -> <<Result/binary, ",">>
            end,
     NewResult =
         if (Count > 1) or (AddBracket =:= true) ->
-            iolist_to_binary( [Temp, "\"", Key, "\":[", Array, "]"  ]);
-            true ->
+                iolist_to_binary( [Temp, "\"", Key, "\":[", Array, "]"  ]);
+           true ->
                 iolist_to_binary( [Temp, "\"", Key, "\":", Array ] )
         end,
     build_json(Tail, NewResult);
@@ -899,11 +899,11 @@ build_json([{Key, Value} | Tail], Result) ->
     build_json( [{Key, Value, false} | Tail], Result);
 build_json([{Key, Value, AddBracket} | Tail], Result) ->
     Temp = if (Result =:= <<>>) or (Value =:=<<>>) -> Result;
-               true -> <<Result/binary, ",">> end,
+              true -> <<Result/binary, ",">> end,
     NewResult =
         if (AddBracket =:= true) ->
-            iolist_to_binary( [Temp, "\"", Key, "\":[\"", Value, "\"]"  ]);
-            true ->
+                iolist_to_binary( [Temp, "\"", Key, "\":[\"", Value, "\"]"  ]);
+           true ->
                 iolist_to_binary( [Temp, "\"", Key, "\":\"", Value, "\"" ] )
         end,
     build_json(Tail, NewResult);
