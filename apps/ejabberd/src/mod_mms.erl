@@ -6,6 +6,7 @@
 
 -include("ejabberd.hrl").
 -include("jlib.hrl").
+-include("mod_mms.hrl").
 
 -define(NS_MMS, <<"aft:mms">>).
 
@@ -22,8 +23,8 @@ stop(Host) ->
 %% -----------------------------------------------
 
 process_iq(From, To, #iq{xmlns = ?NS_MMS, type = _Type, sub_el = SubEl} = IQ) ->
-    case is_query(SubEl) of
-        true ->
+    case SubEl of
+        #xmlel{name = <<"query">>} ->
             case xml:get_tag_attr_s(<<"query_type">>, SubEl) of
                 <<"download">> ->
                     download(From, To, IQ);
@@ -32,19 +33,12 @@ process_iq(From, To, #iq{xmlns = ?NS_MMS, type = _Type, sub_el = SubEl} = IQ) ->
                 _ ->
                     IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
             end;
-        false ->
+        _ ->
             IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
     end;
-
 process_iq(_, _, IQ) ->
     #iq{sub_el = SubEl} = IQ,
     IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}.
-
-is_query(Packet) ->
-    case Packet of
-        #xmlel{name = <<"query">>} -> true;
-        _ -> false
-    end.
 
 
 %% -----------------------------------------------
@@ -53,59 +47,56 @@ is_query(Packet) ->
 
 download(#jid{lserver = LServer} = _From, _To, #iq{sub_el = SubEl} = IQ) ->
     case get_fileid(SubEl) of
-        emptyid -> IQ#iq{type = error, sub_el = [SubEl]};
+        undefined -> make_error_reply(IQ, <<"19001">>);
         FileUid ->
             case verify(LServer, FileUid) of
                 ok ->
-                    case get_url(FileUid) of
+                    case get_url(LServer, FileUid) of
                         error ->
-                            IQ#iq{type = error, sub_el = [SubEl]};
+                            make_error_reply(IQ, <<"19001">>);
                         Url ->
                             IQ#iq{type = result, sub_el = [
                                 SubEl#xmlel{children = [{xmlcdata, Url}]}]}
                     end;
                 _ ->
-                    IQ#iq{type = error, sub_el = [SubEl]}
+                    make_error_reply(IQ, <<"19001">>)
             end
     end.
 
 upload(_From, _To, #iq{sub_el = SubEl} = IQ) ->
     E = integer_to_binary(generate_expiration()),
-    Secret = iolist_to_binary(mod_mms_s3:upload_secret()),
+    S = list_to_binary(?MMS_SECRET),
     case get_fileid(SubEl) of
-        emptyid ->
+        undefined ->
             F = generate_fileid(),
-            T = generate_token(F, E, Secret),
+            T = generate_token(F, E, S),
             case ejabberd_redis:cmd(["SET", <<"upload:", F/binary>>, E]) of
                 <<"OK">> ->
-                    return_newel(T, F, E, IQ);
+                    make_reply(T, F, E, IQ);
                 _ ->
-                    IQ#iq{type = error, sub_el = [SubEl]}
+                    make_error_reply(IQ, <<"19001">>)
             end;
         F ->
             case ejabberd_redis:cmd(["GET", <<"upload:", F/binary>>]) of
                 undefined ->
-                    IQ#iq{type = error, sub_el = [SubEl]};
+                    make_error_reply(IQ, <<"19001">>);
                 _ ->
-                    T = generate_token(F, E, Secret),
-                    return_newel(T, F, E, IQ)
+                    T = generate_token(F, E, S),
+                    make_reply(T, F, E, IQ)
             end
     end.
 
-get_fileid(SubEl) ->
-    case xml:get_subtag(SubEl, <<"file">>) of
-        false ->
-            emptyid;
-        FileEl ->
-            case xml:get_tag_cdata(FileEl) of
-                <<>> ->
-                    emptyid;
-                FileUid ->
-                    FileUid
-            end
-    end.
 
-return_newel(T, F, E, #iq{sub_el = SubEl} = IQ) ->
+%% ===============================
+%% helper
+%% ===============================
+
+-spec make_error_reply(#iq{}, binary()) -> #iq{}.
+make_error_reply(#iq{sub_el = SubEl} = IQ, Code) ->
+    Error = #xmlel{name = <<"error">>, attrs = [{<<"code">>, Code}]},
+    IQ#iq{type = error, sub_el = [SubEl, Error]}.
+
+make_reply(T, F, E, #iq{sub_el = SubEl} = IQ) ->
     Token = #xmlel{
         name = <<"token">>,
         children = [{xmlcdata, T}]},
@@ -118,32 +109,73 @@ return_newel(T, F, E, #iq{sub_el = SubEl} = IQ) ->
     NEl = SubEl#xmlel{children = [Token, File, Expiration]},
     IQ#iq{type = result, sub_el = [NEl]}.
 
--spec get_url(binary()) -> binary() | error.
-get_url(Uid) ->
-    mod_mms_s3:get(Uid, 30 * 60).  % 30 minutes expiration for download url
+get_fileid(SubEl) ->
+    case xml:get_subtag(SubEl, <<"file">>) of
+        false ->
+            undefined;
+        FileEl ->
+            case xml:get_tag_cdata(FileEl) of
+                <<>> ->
+                    undefined;
+                FileUid ->
+                    FileUid
+            end
+    end.
+
+-spec get_url(binary(), binary()) -> binary() | error.
+get_url(LServer, Uid) ->
+    case get_file(LServer, Uid) of
+        {error, _} ->
+            error;
+        File ->
+            mod_mms_s3:get(File, 30 * 60)
+    end.
 
 -spec generate_token(binary(), binary(), binary()) -> string().
 generate_token(FileId, Expiration, Secret) ->
     md5(<<FileId/binary, Expiration/binary, Secret/binary>>).
 
+-spec generate_expiration() -> integer().
 generate_expiration() ->
     {M, S, _} = erlang:now(),
     M * 1000000 + S + 30 * 60. % 30 minutes expiration for upload token
 
+-spec generate_fileid() -> binary().
 generate_fileid() ->
     uuid:generate().
-
-verify(LServer, Uid) ->
-    Query = [<<"select uid, filename, owner from mms_file where uid = '">>, ejabberd_odbc:escape(Uid), <<"';">>],
-    case ejabberd_odbc:sql_query(LServer, Query) of
-        {selected, [<<"uid">>, <<"filename">>, <<"owner">>], Rs} when is_list(Rs) ->
-            case Rs of
-                [] -> not_found;
-                _ -> ok
-            end;
-        Error -> {error, Error}
-    end.
 
 -spec md5(string() | binary()) -> string().
 md5(Text) ->
     lists:flatten([io_lib:format("~.16b", [N]) || N <- binary_to_list(erlang:md5(Text))]).
+
+%% ===========================
+%% odbc
+%% ===========================
+
+-spec get_file(binary(), binary()) -> #mms_file{} | {error, _}.
+get_file(LServer, Uid) ->
+    Query = [<<"select filename,owner,private,UNIX_timestamp(created_at) from mms_file where uid= '">>, Uid, "';"],
+    case ejabberd_odbc:sql_query(LServer, Query) of
+        {selected, _, []} ->
+            {error, not_exists};
+        {selected, _, [{FileName, Owner, Private, CreatedAt}]} ->
+            #mms_file{uid = Uid, filename = FileName, owner = Owner,
+                private = case Private of
+                              <<0>> -> ?PUBLIC;
+                              _ -> ?PRIVATE
+                          end, created_at = CreatedAt};
+        Reason ->
+            {error, Reason}
+    end.
+
+-spec verify(binary(), binary()) -> ok | {error, _}.
+verify(LServer, Uid) ->
+    Query = [<<"select count(uid) from mms_file where uid = '">>, ejabberd_odbc:escape(Uid), <<"';">>],
+    case ejabberd_odbc:sql_query(LServer, Query) of
+        {selected, _, [{<<"0">>}]} ->
+            {error, not_found};
+        {selected, _, [{<<"1">>}]} ->
+            ok;
+        Error ->
+            {error, Error}
+    end.

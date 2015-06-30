@@ -5,25 +5,23 @@
 
 -module(mod_mms_s3).
 
--export([config/0, bucket/0, start/0, get/2, upload/2, upload_secret/0]).
+-export([config/0, get_env/1, bucket/1, start/0, get/2, upload/2, secret/0]).
 
 -include_lib("erlcloud/include/erlcloud_aws.hrl").
+-include("mod_mms.hrl").
 
--define(ENV(X), get_env(X)).
-
--define(BUCKET, bucket()).
-
--define(S3_CONFIG, config()).
 
 start() ->
     erlcloud:start().
 
+-spec get_env(atom()) -> string() | integer() | undefined.
 get_env(Key) ->
     case application:get_env(ejabberd, Key) of
         {ok, Val} -> Val;
         _ -> undefined
     end.
 
+-spec config() -> #aws_config{}.
 config() ->
     #aws_config{
         access_key_id = ?ENV(s3_key),
@@ -32,24 +30,33 @@ config() ->
         timeout = ?ENV(s3_timeout)
     }.
 
-upload_secret() ->
+-spec secret() -> binary() | undefined.
+secret() ->
     ?ENV(upload_secret).
 
-bucket() ->
+-spec bucket(binary()) -> binary() | undefined.
+bucket(?PUBLIC) ->
+    ?ENV(s3_public_bucket);
+bucket(_) ->
     ?ENV(s3_bucket).
 
--spec get(binary(), integer()) -> binary().
-get(Uid, Expire) ->
-    try erlcloud_s3:make_link(Expire, ?BUCKET, binary_to_list(Uid), ?S3_CONFIG) of
+-spec get(binary(), integer()) -> iodata() | error.
+get(#mms_file{uid = Uid, private = ?PUBLIC}, _) ->
+    Host = list_to_binary(?ENV(s3_host)),
+    Bucket = list_to_binary(bucket(?PUBLIC)),
+    <<"http://", Bucket/binary, ".", Host/binary, "/", Uid/binary>>;
+get(#mms_file{uid = Uid, private = Private}, Expire) ->
+    try erlcloud_s3:make_link(Expire, bucket(Private), Uid, ?S3_CONFIG) of
         {_, H, P} -> H ++ P
     catch
         _:_ -> error
     end.
 
--spec upload(binary(), binary()) -> ok.
-upload(Uid, Data) ->
-    try erlcloud_s3:put_object(?BUCKET, binary_to_list(Uid), Data, ?S3_CONFIG) of
+-spec upload(#mms_file{}, binary()) -> ok | error.
+upload(#mms_file{uid = Uid, private = Private}, Content) ->
+    try erlcloud_s3:put_object(bucket(Private), binary_to_list(Uid), Content, ?S3_CONFIG) of
         _ -> ok
     catch
-        _:_ -> error
+        _:_Reason ->
+            error
     end.

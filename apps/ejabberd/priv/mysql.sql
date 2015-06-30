@@ -364,6 +364,7 @@ CREATE UNIQUE INDEX push_token_index ON push_service (token);
 CREATE TABLE mms_file (
     uid varchar(64) PRIMARY KEY,
     filename varchar(250) CHARACTER SET binary NOT NULL,
+    private bit NOT NULL default 1,
     owner varchar(250) CHARACTER SET binary NOT NULL,
     created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) CHARACTER SET utf8;
