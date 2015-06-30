@@ -344,7 +344,7 @@
 -define(AFT_ERR_BAD_NICK_FORMAT,
     jlib:aft_stanza_error(<<"11009">>)).
 
-%% account error: 13000 ~ 13999
+%% project error: 13000 ~ 13999
 -define(AFT_ERR_INVALID_TEMPLATE,
     jlib:aft_stanza_error(<<"13000">>)).
 -define(AFT_ERR_PROJECT_NAME_EXIST,
@@ -365,7 +365,10 @@
     jlib:aft_stanza_error(<<"13008">>)).
 -define(AFT_ERR_PARENT_NOT_EXIST,
     jlib:aft_stanza_error(<<"13009">>)).
-
+-define(AFT_ERR_ALLREADY_FINISHED,
+    jlib:aft_stanza_error(<<"13010">>)).
+-define(AFT_ERR_MEMBER_INVALID,
+    jlib:aft_stanza_error(<<"13011">>)).
 %%--------------------------------------------------------------------
 
 

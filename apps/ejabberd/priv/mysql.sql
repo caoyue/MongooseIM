@@ -376,7 +376,7 @@ CREATE TABLE organization (
     lft int NOT NULL,
     rgt int NOT NULL,
     depth int NOT NULL,
-    description varchar(250) CHARACTER SET binary,
+    department varchar(250) CHARACTER SET binary,
     project int NOT NULL
 ) CHARACTER SET utf8;
 CREATE INDEX organization_tree_index ON organization (project);
@@ -396,16 +396,17 @@ CREATE TABLE project (
     status tinyint NOT NULL default 1,
     admin varchar(250) CHARACTER SET binary NOT NULL,
     start_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    end_at timestamp
+    end_at timestamp,
+    job_tag varchar(30) NOT NULL,
+    member_tag varchar(30) NOT NULL,
+    link_tag varchar(30) NOT NULL
 ) CHARACTER SET utf8;
 
 CREATE TABLE project_link (
     id1 int NOT NULL,
-    id2 int NOT NULL
+    id2 int NOT NULL,
+    PRIMARY KEY (id1, id2),
 ) CHARACTER SET utf8;
-CREATE UNIQUE INDEX i_project_link_id1_id2 ON project_link(id1, id2);
-CREATE INDEX i_project_link_id1 ON project_link(id1);
-CREATE INDEX i_project_link_id2 ON project_link(id2);
 
 -- organization end
 

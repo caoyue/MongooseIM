@@ -158,20 +158,29 @@ set_vcard(User, VHost, VCard, VCardSearch) ->
 get_vcard_ex(UserName, Server) ->
     case get_vcard(UserName, Server) of
         {ok, [VCARD]} ->
-            Photo = xml:get_subtag(VCARD, <<"PHOTO">>),
-            case Photo of
-                    false -> {ok, nophoto};
-                _ ->
-                    case xml:get_subtag( Photo, <<"BINVAL">> ) of
-                        false ->
-                            {ok, nophoto};
-                        Binval ->
-                            case xml:get_tag_cdata(Binval) of
-                                <<"">> -> {ok, nophoto};
-                                Data ->{ok, Data}
+            case xml:get_subtag(VCARD, <<"HEADPHOTO">>) of
+                false ->
+                    Photo = xml:get_subtag(VCARD, <<"PHOTO">>),
+                    case Photo of
+                        false -> {ok, nophoto};
+                        _ ->
+                            case xml:get_subtag( Photo, <<"BINVAL">> ) of
+                                false ->
+                                    {ok, nophoto};
+                                Binval ->
+                                    case xml:get_tag_cdata(Binval) of
+                                        <<"">> -> {ok, nophoto};
+                                        Data ->{ok, Data}
+                                    end
                             end
+                    end;
+                HeadPhone ->
+                    case xml:get_tag_cdata(HeadPhone) of
+                        <<>> -> {ok, nophoto};
+                        UrlData -> {ok, UrlData}
                     end
             end;
+
         { error, _ } ->
             {error, error}
     end.

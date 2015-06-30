@@ -19,7 +19,7 @@
     lft :: binary() | integer(),
     rgt :: binary() | integer(),
     depth :: binary() | integer(),
-    description :: binary(),
+    department :: binary(),
     project :: binary() | integer()
 }).
 
@@ -36,7 +36,10 @@
     status :: integer(),
     admin :: binary(),
     start_at :: binary(),
-    end_at :: binary()|undefined
+    end_at :: binary()|undefined,
+    job_tag :: binary(),
+    member_tag :: binary(),
+    link_tag :: binary()
 }).
 
 %% define group type
