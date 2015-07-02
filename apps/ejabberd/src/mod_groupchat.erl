@@ -46,6 +46,8 @@ process_iq(From, To, #iq{xmlns = ?NS_GROUPCHAT, type = _Type, sub_el = SubEl} = 
                     create_and_add(From, To, IQ);
                 <<"set_groupname">> ->
                     set_groupname(From, To, IQ);
+                <<"set_avatar">> ->
+                    set_avatar(From, To, IQ);
                 <<"remove_members">> ->
                     remove_members(From, To, IQ);
                 <<"dismiss_group">> ->
@@ -126,7 +128,8 @@ create_group(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = S
     GroupName = xml:get_tag_attr_s(<<"groupname">>, SubEl),
     GroupType = get_group_type(SubEl),
     Project = xml:get_tag_attr_s(<<"project">>, SubEl),
-    Group = #group{master = UserJid, groupname = GroupName, type = GroupType, project = Project},
+    Avatar = xml:get_tag_attr_s(<<"avatar">>, SubEl),
+    Group = #group{master = UserJid, groupname = GroupName, type = GroupType, project = Project, avatar = Avatar},
     case {GroupType, Project} of
         {?TASK_GROUP, <<>>} ->
             IQ#iq{type = error};
@@ -212,10 +215,34 @@ set_groupname(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = 
                     GroupName = xml:get_tag_attr_s(<<"groupname">>, SubEl),
                     case odbc_groupchat:set_groupname(LServer, GroupId, GroupName) of
                         ok ->
-                            push_groupinfo(GroupId, GroupName, LServer, MembersList, <<"rename">>),
+                            push_groupinfo(#group{groupid = GroupId, groupname = GroupName},
+                                LServer, MembersList, <<"rename">>),
                             Res = SubEl#xmlel{attrs = [{<<"xmlns">>, ?NS_GROUPCHAT},
                                 {<<"groupid">>, GroupId}, {<<"groupname">>, GroupName}]},
                             IQ#iq{type = result, sub_el = [Res]};
+                        {error, _} ->
+                            IQ#iq{type = error, sub_el = []}
+                    end;
+                false ->
+                    IQ#iq{type = error, sub_el = []}
+            end
+    end.
+
+%% @doc set group avatar
+set_avatar(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = SubEl} = IQ) ->
+    GroupId = xml:get_tag_attr_s(<<"groupid">>, SubEl),
+    UserJid = jlib:jid_to_binary({LUser, LServer, <<>>}),
+    case odbc_groupchat:get_members_by_groupid(LServer, GroupId) of
+        {ok, MembersInfoList} ->
+            MembersList = [Jid || {Jid, _} <- MembersInfoList],
+            case lists:member(UserJid, MembersList) of
+                true ->
+                    Avatar = xml:get_tag_attr_s(<<"avatar">>, SubEl),
+                    case odbc_groupchat:set_avatar(LServer, GroupId, Avatar) of
+                        ok ->
+                            push_groupinfo(#group{groupid = GroupId, avatar = Avatar},
+                                LServer, MembersList, <<"avatar">>),
+                            IQ#iq{type = result};
                         {error, _} ->
                             IQ#iq{type = error, sub_el = []}
                     end;
@@ -254,7 +281,7 @@ complete_task(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = 
                     case odbc_groupchat:get_groupinfo_by_groupid(LServer, GroupId) of
                         {ok, Group} ->
                             {ok, R} = odbc_groupchat:get_members_by_groupid(LServer, GroupId),
-                            push_groupinfo(GroupId, Group#group.groupname, LServer,
+                            push_groupinfo(Group, LServer,
                                 [Jid || {Jid, _} <- R], <<"complete">>);
                         _ ->
                             error
@@ -301,7 +328,8 @@ dismiss_group(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = 
                 {ok, MembersInfoList} ->
                     case odbc_groupchat:dismiss_group(LServer, GroupId, MembersInfoList) of
                         ok ->
-                            push_groupinfo(GroupId, <<>>, LServer, [Jid || {Jid, _} <- MembersInfoList], <<"dismiss">>),
+                            push_groupinfo(#group{groupid = GroupId, groupname = <<>>}, LServer,
+                                [Jid || {Jid, _} <- MembersInfoList], <<"dismiss">>),
                             IQ#iq{type = result, sub_el = [SubEl]};
                         _ ->
                             IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
@@ -406,10 +434,10 @@ push_groupmember(GroupId, GroupName, GroupOwner, Server, ToList, MembersInfoList
             end,
     push(GroupId, Server, Attrs, Contents, ToList).
 
-push_groupinfo(GroupId, GroupName, Server, ToList, Action) ->
-    Contents = groupinfo_json(GroupId, GroupName, Action),
+push_groupinfo(Group, Server, ToList, Action) ->
+    Contents = groupinfo_json(Group, Action),
     Attrs = [{<<"xmlns">>, ?NS_GROUPCHAT}, {<<"type">>, <<"groupinfo">>}],
-    push(GroupId, Server, Attrs, Contents, ToList).
+    push(Group#group.groupid, Server, Attrs, Contents, ToList).
 
 push(GroupId, Server, Attrs, Contents, ToList) ->
     From = jlib:jid_to_binary({GroupId, Server, <<>>}),
@@ -429,29 +457,16 @@ push(GroupId, Server, Attrs, Contents, ToList) ->
 
 -spec group_to_json(#group{}) -> binary().
 group_to_json(Group) ->
-    iolist_to_binary(mochijson2:encode(record_to_json(Group))).
+    iolist_to_binary(mochijson2:encode({struct, record_to_json(Group)})).
 
 -spec grouplist_to_json([#group{}]) -> binary().
 grouplist_to_json(List) ->
-    JsonArray = [record_to_json(Group) || Group <- List],
+    JsonArray = [{struct, record_to_json(Group)} || Group <- List],
     iolist_to_binary(mochijson2:encode(JsonArray)).
 
-record_to_json(Group) ->
-    [_ | L] = tuple_to_list(Group),
-    {struct, lists:filter(fun(X) ->
-        case X of
-            {_, undefined} -> false;
-            {_, null} -> false;
-            _ -> true
-        end
-    end,
-        lists:zip(record_info(fields, group), L)
-    )}.
-
-groupinfo_json(GroupId, GroupName, Action) ->
-    JsonArray = [{struct, [{groupid, GroupId}, {groupname, GroupName}, {action, Action}]}],
+groupinfo_json(Group, Action) ->
+    JsonArray = [{struct, [{action, Action} | record_to_json(Group)]}],
     iolist_to_binary(mochijson2:encode(JsonArray)).
-
 
 groupmember_json(MembersInfoList, Action) ->
     JsonArray = [{struct, [{userjid, Jid}, {nickname, NickName},
@@ -461,6 +476,18 @@ groupmember_json(MembersInfoList, Action) ->
 members_to_json(Members) ->
     JsonArray = [{struct, [{userjid, UserJid}, {nickname, NickName}]} || {UserJid, NickName} <- Members],
     iolist_to_binary(mochijson2:encode(JsonArray)).
+
+record_to_json(Group) ->
+    [_ | L] = tuple_to_list(Group),
+    lists:filter(fun(X) ->
+        case X of
+            {_, undefined} -> false;
+            {_, null} -> false;
+            _ -> true
+        end
+    end,
+        lists:zip(record_info(fields, group), L)
+    ).
 
 get_group_type(SubEl) ->
     case xml:get_tag_attr_s(<<"grouptype">>, SubEl) of

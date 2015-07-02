@@ -16,6 +16,7 @@
     is_user_own_group/3,
     is_in_project/3,
     set_groupname/3,
+    set_avatar/3,
     set_nickname_in_group/4,
     remove_members/3]).
 
@@ -27,11 +28,10 @@
 get_groupinfo_by_groupid(LServer, GroupId) ->
     case ejabberd_odbc:sql_query(
         LServer,
-        ["select name,owner,type,project,status from groupinfo where groupid = '", ejabberd_odbc:escape(GroupId), "';"]) of
-        {selected, [<<"name">>, <<"owner">>, <<"type">>, <<"project">>, <<"status">>],
-            [{GroupName, GroupOwner, GroupType, Project, Status}]} ->
+        ["select name,owner,type,project,status,avatar from groupinfo where groupid = '", ejabberd_odbc:escape(GroupId), "';"]) of
+        {selected, _, [{GroupName, GroupOwner, GroupType, Project, Status, Avatar}]} ->
             {ok, #group{groupid = GroupId, master = GroupOwner, groupname = GroupName,
-                type = GroupType, project = Project, status = Status}};
+                type = GroupType, project = Project, status = Status, avatar = Avatar}};
         Error ->
             {error, Error}
     end.
@@ -53,40 +53,40 @@ get_groups_by_jid(LServer, UserJid) ->
     case ejabberd_odbc:sql_query(
         LServer,
         [<<"select groupinfo.groupid,groupinfo.name,groupinfo.owner,groupinfo.type,groupinfo.project,">>,
-            <<"groupinfo.status,groupuser.private from groupinfo,groupuser where groupuser.jid = '">>,
+            <<"groupinfo.status,groupinfo.avatar,groupuser.private from groupinfo,groupuser where groupuser.jid = '">>,
             ejabberd_odbc:escape(UserJid), "' and groupinfo.groupid = groupuser.groupid;"]) of
-        {selected, [<<"groupid">>, <<"name">>, <<"owner">>, <<"type">>, <<"project">>,
-            <<"status">>, <<"private">>], Rs} ->
+        {selected, _, Rs} ->
             {ok, [#group{groupid = GroupId, master = GroupOwner, groupname = GroupName,
-                type = GroupType, project = Project, private = Private, status = Status}
-                || {GroupId, GroupName, GroupOwner, GroupType, Project, Status, Private} <- Rs]};
+                type = GroupType, project = Project, private = Private, status = Status, avatar = Avatar}
+                || {GroupId, GroupName, GroupOwner, GroupType, Project, Status, Avatar, Private} <- Rs]};
         Error ->
             {error, Error}
     end.
 
 get_groups_by_project(LServer, Project, Type) ->
-    Query = [<<"select groupid,name,owner,status from groupinfo where project = ">>,
+    Query = [<<"select groupid,name,owner,status,avatar from groupinfo where project = ">>,
         Project, " and type = ", Type, ";"],
     case ejabberd_odbc:sql_query(LServer, Query) of
         {selected, _, R} ->
             {ok, [#group{groupid = GroupId, master = GroupOwner, groupname = GroupName,
-                type = Type, project = Project, status = Status}
-                || {GroupId, GroupName, GroupOwner, Status} <- R]}
+                type = Type, project = Project, status = Status, avatar = Avatar}
+                || {GroupId, GroupName, GroupOwner, Status, Avatar} <- R]}
     end.
 
 -spec create_group(binary(), #group{}) -> {ok, binary()} | {error, _}.
-create_group(LServer, #group{master = GroupOwner, groupname = GroupName, type = GroupType, project = Project}) ->
+create_group(LServer, Group) ->
     F = fun() ->
         Query =
-            [<<"insert into groupinfo(name,owner,type,project) values('">>, ejabberd_odbc:escape(GroupName), "','",
-                ejabberd_odbc:escape(GroupOwner), "',", GroupType, ",",
-                case Project of
+            [<<"insert into groupinfo(name,owner,type,project,avatar) values('">>,
+                ejabberd_odbc:escape(Group#group.groupname), "','",
+                ejabberd_odbc:escape(Group#group.master), "',", Group#group.type, ",",
+                case Group#group.project of
                     <<>> -> "NULL";
-                    _ -> Project
-                end, ");"],
+                    P -> P
+                end, ",'", Group#group.avatar, ";);"],
         ejabberd_odbc:sql_query_t(Query),
         {selected, _, [{GroupId}]} = ejabberd_odbc:sql_query_t([<<"select last_insert_id();">>]),
-        T = make_add_query([GroupOwner], [], GroupId),
+        T = make_add_query([Group#group.master], [], GroupId),
         ejabberd_odbc:sql_query_t(T),
         GroupId
     end,
@@ -133,26 +133,26 @@ add_members(LServer, GroupId, MembersList) ->
     end.
 
 -spec create_and_add(binary(), #group{}, [binary()]) -> {ok, _} | {error, _}.
-create_and_add(LServer, #group{master = GroupOwner, groupname = GroupName,
-    type = GroupType, project = Project}, MembersList) ->
+create_and_add(LServer, Group, MembersList) ->
     F = fun() ->
-        Query = [<<"insert into groupinfo(name,owner,type,project) values('">>,
-            ejabberd_odbc:escape(GroupName), "','", ejabberd_odbc:escape(GroupOwner), "',", GroupType, ",",
-            case Project of
+        Query = [<<"insert into groupinfo(name,owner,type,project,avatar) values('">>,
+            ejabberd_odbc:escape(Group#group.groupname), "','", ejabberd_odbc:escape(Group#group.master), "',",
+            Group#group.type, ",",
+            case Group#group.project of
                 <<>> -> "NULL";
-                _ -> Project
-            end, ");"],
+                P -> P
+            end, ",'", Group#group.avatar, "');"],
         ejabberd_odbc:sql_query_t(Query),
         Result = ejabberd_odbc:sql_query_t([<<"select last_insert_id();">>]),
         {selected, _, [{RId}]} = Result,
-        AllMembers = [GroupOwner | MembersList],
+        AllMembers = [Group#group.master | MembersList],
         QueryList = make_add_query(lists:usort(AllMembers), [], RId),
         lists:foreach(fun(X) ->
             ejabberd_odbc:sql_query_t(X)
         end, QueryList),
         ejabberd_odbc:sql_query_t([<<"select groupid,jid,nickname from groupuser where groupid ='">>,
             ejabberd_odbc:escape(RId), <<"' and jid <> '">>,
-            ejabberd_odbc:escape(GroupOwner), <<"';">>])
+            ejabberd_odbc:escape(Group#group.master), <<"';">>])
     end,
     case ejabberd_odbc:sql_transaction(LServer, F) of
         {atomic, {selected, [<<"groupid">>, <<"jid">>, <<"nickname">>], Rs}} ->
@@ -206,6 +206,16 @@ set_groupname(LServer, GroupId, GroupName) ->
             {error, Error}
     end.
 
+set_avatar(LServer, GroupId, Avatar) ->
+    T = ejabberd_odbc:sql_query(LServer, [<<"update groupinfo set avatar ='">>,
+        ejabberd_odbc:escape(Avatar), <<"' where groupid = '">>,
+        ejabberd_odbc:escape(GroupId), <<"';">>]),
+    case T of
+        {updated, 1} ->
+            ok;
+        Error ->
+            {error, Error}
+    end.
 
 set_nickname_in_group(LServer, GroupId, UserId, NickName) ->
     T = ejabberd_odbc:sql_query(LServer, [<<"update groupuser set nickname ='">>,

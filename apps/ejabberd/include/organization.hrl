@@ -10,7 +10,8 @@
     type :: binary() | integer(),
     status :: binary() | integer(),
     project :: binary() | integer(),
-    private::binary()
+    avatar :: binary(),
+    private :: binary()
 }).
 
 -record(node, {
@@ -43,11 +44,11 @@
 }).
 
 %% define group type
--define(NORAML_GROUP,<<"1">>).
--define(TASK_GROUP,<<"2">>).
--define(EVENT_GROUP,<<"3">>).
--define(FILE_GROUP,<<"4">>).
+-define(NORAML_GROUP, <<"1">>).
+-define(TASK_GROUP, <<"2">>).
+-define(EVENT_GROUP, <<"3">>).
+-define(FILE_GROUP, <<"4">>).
 
 %% define group status
--define(STATUS_START,<<"1">>).
--define(STATUS_END,<<"2">>).
+-define(STATUS_START, <<"1">>).
+-define(STATUS_END, <<"2">>).
