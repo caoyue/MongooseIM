@@ -453,3 +453,30 @@ CREATE TABLE library_file_version(
 ) CHARACTER SET utf8;
 -- file library end
 
+-- favorite begin
+CREATE TABLE favorite_change(
+    jid varchar(250) PRIMARY KEY,
+    tag char(25) NOT NULL
+) CHARACTER SET utf8;
+
+CREATE TABLE favorite_tag(
+    id int NOT NULL auto_increment,
+    fid int NOT NULL,
+    tag varchar(25) CHARACTER SET binary NOT NULL,
+    PRIMARY KEY (id, fid)
+) CHARACTER SET utf8;
+
+CREATE INDEX i_fid ON favorite_tag(fid);
+
+CREATE TABLE favorite(
+    id int PRIMARY KEY NOT NULL auto_increment,
+    jid varchar(250) CHARACTER SET binary NOT NULL,
+    from_jid varchar(250) CHARACTER SET binary NOT NULL,
+    title varchar(250) CHARACTER SET binary NOT NULL,
+    type int NOT NULL default 0,
+    content blob NOT NULL,
+    tag char(25) NOT NULL
+) CHARACTER SET utf8;
+CREATE INDEX i_jid ON favorite(jid);
+-- favorite end
+
