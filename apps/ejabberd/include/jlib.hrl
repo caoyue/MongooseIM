@@ -315,33 +315,33 @@
 %%--------------------------------------------------------------------
 %% system error: 10000 ~ 10999
 -define(AFT_ERR_DATABASE,
-    jlib:aft_stanza_error(<<"10000">>)).
+    jlib:stanza_error(<<"10000">>,<<"wait">>,<<"undefined-condition">>)).
 -define(AFT_ERR_IP_FORBIDDEN,
-    jlib:aft_stanza_error(<<"10001">>)).
+    jlib:stanza_error(<<"10001">>,<<"auth">>,<<"undefined-condition">>)).
 -define(AFT_ERR_LOGIC_SERVER,
-    jlib:aft_stanza_error(<<"10002">>)).
+    jlib:stanza_error(<<"10002">>,<<"wait">>,<<"undefined-condition">>)).
 
 %% account error: 11000 ~ 11999
 -define(AFT_ERR_GET_CODE_SO_QUICKLY,
-    jlib:aft_stanza_error(<<"11000">>)).
+    jlib:stanza_error(<<"11000">>,<<"wait">>,<<"undefined-condition">>)).
 -define(AFT_ERR_BAD_PHONE_FORMAT,
-    jlib:aft_stanza_error(<<"11001">>)).
+    jlib:stanza_error(<<"11001">>,<<"modify">>,<<"undefined-condition">>)).
 -define(AFT_ERR_REGISTER_SO_QUICKLY,
-    jlib:aft_stanza_error(<<"11002">>)).
+    jlib:stanza_error(<<"11002">>,<<"cancel">>,<<"undefined-condition">>)).
 -define(AFT_ERR_BAD_CODE,
-    jlib:aft_stanza_error(<<"11003">>)).
+    jlib:stanza_error(<<"11003">>,<<"modify">>,<<"undefined-condition">>)).
 -define(AFT_ERR_PHONE_EXIST,
-    jlib:aft_stanza_error(<<"11004">>)).
+    jlib:stanza_error(<<"11004">>,<<"modify">>,<<"undefined-condition">>)).
 -define(AFT_ERR_PHONE_NOT_EXIST,
-    jlib:aft_stanza_error(<<"11005">>)).
+    jlib:stanza_error(<<"11005">>,<<"modify">>,<<"undefined-condition">>)).
 -define(AFT_ERR_WEAK_PASSWORD,
-    jlib:aft_stanza_error(<<"11006">>)).
+    jlib:stanza_error(<<"11006">>,<<"modify">>,<<"undefined-condition">>)).
 -define(AFT_ERR_BAD_PASSWORD_FORMAT,
-    jlib:aft_stanza_error(<<"11007">>)).
+    jlib:stanza_error(<<"11007">>,<<"modify">>,<<"undefined-condition">>)).
 -define(AFT_ERR_PASSWORD_SETTING_EXPIRE,
-    jlib:aft_stanza_error(<<"11008">>)).
+    jlib:stanza_error(<<"11008">>,<<"cancel">>,<<"undefined-condition">>)).
 -define(AFT_ERR_BAD_NICK_FORMAT,
-    jlib:aft_stanza_error(<<"11009">>)).
+    jlib:stanza_error(<<"11009">>,<<"modify">>,<<"undefined-condition">>)).
 %%--------------------------------------------------------------------
 
 
