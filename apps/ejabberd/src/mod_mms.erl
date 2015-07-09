@@ -63,14 +63,20 @@ download(#jid{lserver = LServer} = _From, _To, #iq{sub_el = SubEl} = IQ) ->
             end
     end.
 
-upload(_From, _To, #iq{sub_el = SubEl} = IQ) ->
+upload(#jid{lserver = LServer, luser = LUser} = _From, _To, #iq{sub_el = SubEl} = IQ) ->
     E = integer_to_binary(generate_expiration()),
     S = list_to_binary(?MMS_SECRET),
+    Jid = <<LUser/binary, $@, LServer/binary>>,
+    Private = case xml:get_tag_attr_s(<<"private">>, SubEl) of
+                  ?PUBLIC -> ?PUBLIC;
+                  _ -> ?PRIVATE
+              end,
     case get_fileid(SubEl) of
         undefined ->
             F = generate_fileid(),
-            T = generate_token(F, E, S),
-            case ejabberd_redis:cmd(["SET", <<"upload:", F/binary>>, E]) of
+            T = generate_token(Jid, F, E, S, Private),
+            Time = integer_to_binary(stamp_now()),
+            case ejabberd_redis:cmd(["SET", <<"upload:", F/binary>>, <<Private/binary, $:, Time/binary>>]) of
                 <<"OK">> ->
                     make_reply(T, F, E, IQ);
                 _ ->
@@ -78,11 +84,11 @@ upload(_From, _To, #iq{sub_el = SubEl} = IQ) ->
             end;
         F ->
             case ejabberd_redis:cmd(["GET", <<"upload:", F/binary>>]) of
-                undefined ->
-                    make_error_reply(IQ, <<"19001">>);
+                {ok, <<Private:1/binary, $:, _/binary>>} ->
+                    T = generate_token(Jid, F, E, S, Private),
+                    make_reply(T, F, E, IQ);
                 _ ->
-                    T = generate_token(F, E, S),
-                    make_reply(T, F, E, IQ)
+                    make_error_reply(IQ, <<"19001">>)
             end
     end.
 
@@ -131,14 +137,17 @@ get_url(LServer, Uid) ->
             mod_mms_s3:get(File, 30 * 60)
     end.
 
--spec generate_token(binary(), binary(), binary()) -> string().
-generate_token(FileId, Expiration, Secret) ->
-    md5(<<FileId/binary, Expiration/binary, Secret/binary>>).
+-spec generate_token(binary(), binary(), binary(), binary(), binary()) -> string().
+generate_token(Jid, FileId, Expiration, Secret, Private) ->
+    md5(<<Jid/binary, FileId/binary, Expiration/binary, Secret/binary, Private/binary>>).
 
 -spec generate_expiration() -> integer().
 generate_expiration() ->
+    stamp_now() + 30 * 60. % 30 minutes expiration for upload token
+
+stamp_now() ->
     {M, S, _} = erlang:now(),
-    M * 1000000 + S + 30 * 60. % 30 minutes expiration for upload token
+    M * 1000000 + S.
 
 -spec generate_fileid() -> binary().
 generate_fileid() ->
