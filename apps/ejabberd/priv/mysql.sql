@@ -394,6 +394,7 @@ CREATE INDEX organization_user_index ON organization_user (organization, jid);
 CREATE TABLE project (
     id int PRIMARY KEY NOT NULL auto_increment,
     name varchar(250) CHARACTER SET binary NOT NULL,
+    photo varchar(250) CHARACTER SET binary NOT NULL,
     description varchar(250) CHARACTER SET binary,
     status tinyint NOT NULL default 1,
     admin varchar(250) CHARACTER SET binary NOT NULL,

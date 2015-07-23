@@ -38,6 +38,10 @@ process_iq(From, To, #iq{xmlns = ?NS_AFT_PROJECT, sub_el = SubEl} = IQ) ->
             create(From, To, IQ);
         <<"finish">> ->
             finish(From, To, IQ);
+        <<"set_photo">> ->
+            set_photo(From, To, IQ);
+        <<"get_photo">> ->
+            get_photo(From, To, IQ);
         <<"subscribe">> ->
             subscribe(From, To, IQ, subscribe);
         <<"subscribed">> ->
@@ -148,6 +152,46 @@ finish(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl} = IQ)
 finish(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
 
+set_photo(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl} = IQ) ->
+    #jid{user = U, server = S} = From,
+    BaseJID = <<U/binary, "@", S/binary>>,
+    {struct, Data} = mochijson2:decode(xml:get_tag_cdata(SubEl)),
+    {_, ProID} = lists:keyfind(<<"project">>, 1, Data),
+    {_, Photo} = lists:keyfind(<<"photo">>, 1, Data),
+
+    case set_photo_ex(S, ProID, BaseJID, Photo) of
+        {error, Error} ->
+            IQ#iq{type = error, sub_el = [SubEl, Error]};
+        ok ->
+            F = mochijson2:encoder([{utf8, true}]),
+            Content = iolist_to_binary(F({struct, [{<<"project">>, ProID}, {<<"photo">>, Photo}]})) ,
+            {ok, Result} = odbc_organization:get_all_jid(S, ProID),
+            push_message(ProID, S, Result, <<"set_photo">>, Content),
+            IQ#iq{type = result}
+    end;
+set_photo(_, _, IQ) ->
+    IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
+
+
+get_photo(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = get, sub_el = SubEl} = IQ) ->
+    #jid{user = U, server = S} = From,
+    {struct, Data} = mochijson2:decode(xml:get_tag_cdata(SubEl)),
+    {_, ProID} = lists:keyfind(<<"project">>, 1, Data),
+
+    case get_photo_ex(S, ProID) of
+        {error, Error} ->
+            IQ#iq{type = error, sub_el = [SubEl, Error]};
+        {ok, Result} ->
+            IQ#iq{type = result,
+                  sub_el = [SubEl#xmlel{attrs = [{<<"xmlns">>, ?NS_AFT_PROJECT}, {<<"type">>, <<"get_photo">>}],
+                                        children = [{xmlcdata, Result}]}]}
+    end;
+get_photo(_, _, IQ) ->
+    IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
+
+
+
+
 list_project(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = get, sub_el = SubEl} = IQ, Type) ->
     #jid{user = U, server = S} = From,
     BaseJID = <<U/binary, "@", S/binary>>,
@@ -211,40 +255,29 @@ add_member(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl} =
     {_, Members} = lists:keyfind(<<"member">>, 1, Data),
 
     if length(Members) > 0 ->
-            Ls = parse_json_list([<<"job_id">>, <<"jid">>], Members, []),
-            case add_member_ex(S, ProID, BaseJID, Ls) of
-                {error, Error} ->
-                    IQ#iq{type = error, sub_el = [SubEl, Error]};
-                {ok, MemberTag, ValidMembers} ->
-                    Content1 = [{struct, [{<<"job_id">>, V1}, {<<"jid">>, V2}]} || {V1, V2} <- ValidMembers],
-                    F = mochijson2:encoder([{utf8, true}]),
-                    Content = iolist_to_binary(F({struct, [{<<"project">>, ProID}, {<<"member_tag">>, MemberTag}, {<<"member">>, Content1}]})) ,
-                    case odbc_organization:get_all_jid(S, ProID) of
-                        {ok, Result} ->
-                            push_message(ProID, S, Result, <<"add_member">>, Content),
-                            %% push notice to all link project members.
-                            case odbc_organization:get_link_project(S, ProID) of
-                                {ok, Result1} ->
-                                    lists:foreach(fun({Project}) ->
-                                                          case odbc_organization:get_all_jid(S, Project) of
-                                                              {ok, Result2} ->
-                                                                  push_message(ProID, S, Result2, <<"add_member">>, Content),
-                                                                  IQ#iq{type = result};
-                                                              _ ->
-                                                                  %% if failed how to synchronous to client.
-                                                                  ?ERROR_MSG("[Project:~p] push add member msg failed.", [ProID]),
-                                                                  IQ#iq{type = result}
-                                                          end
-                                                  end,
-                                                  Result1);
-                                {error, _} ->
-                                    IQ#iq{type = error, sub_el = [?AFT_ERR_DATABASE]}
-                            end;
-                        _ ->
-                            IQ#iq{type = error, sub_el = [SubEl, ?AFT_ERR_DATABASE]}
-                    end,
-                    IQ#iq{type = result}
-            end;
+        Ls = parse_json_list([<<"job_id">>, <<"jid">>], Members, []),
+        case add_member_ex(S, ProID, BaseJID, Ls) of
+            {error, Error} ->
+                IQ#iq{type = error, sub_el = [SubEl, Error]};
+            {ok, MemberTag, ValidMembers} ->
+                Content1 = [{struct, [{<<"job_id">>, V1}, {<<"jid">>, V2}]} || {V1, V2} <- ValidMembers],
+                F = mochijson2:encoder([{utf8, true}]),
+                Content = iolist_to_binary(F({struct, [{<<"project">>, ProID}, {<<"member_tag">>, MemberTag}, {<<"member">>, Content1}]})) ,
+                case odbc_organization:get_all_jid(S, ProID) of
+                    {ok, Result} ->
+                        push_message(ProID, S, Result, <<"add_member">>, Content),
+                        %% push notice to all link project members.
+                        {ok, Result1} = odbc_organization:get_link_project(S, ProID),
+                        lists:foreach(fun({Project}) ->
+                            {ok, Result2} = odbc_organization:get_all_jid(S, Project),
+                            push_message(ProID, S, Result2, <<"add_member">>, Content)
+                        end,
+                        Result1),
+                        IQ#iq{type = result};
+                    _ ->
+                        IQ#iq{type = error, sub_el = [SubEl, ?AFT_ERR_DATABASE]}
+                end
+        end;
        true ->
             IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}
     end;
@@ -267,28 +300,17 @@ delete_member(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl
                     Content = <<"{\"project\":\"", ProID/binary,  "\", \"member_tag\":\"", MemberTag/binary,  "\", \"member\":[\"", JID/binary, "\"]}">>,
                     push_message(ProID, S, Result0, <<"delete_member">>, Content),
                     %% push notice to all link project member.
-                    case odbc_organization:get_link_project(S, ProID) of
-                        {ok, Result1} ->
-                            lists:foreach(fun({Project}) ->
-                                                  case odbc_organization:get_all_jid(S, Project) of
-                                                      {ok, Result2} ->
-                                                          push_message(ProID, S, Result2, <<"delete_member">>, Content),
-                                                          IQ#iq{type = result};
-                                                      _ ->
-                                                          %% if failed how to synchronous to client.
-                                                          ?ERROR_MSG("[Project:~p] push delete member msg failed.", [ProID]),
-                                                          IQ#iq{type = result}
-                                                  end
-                                          end,
-                                          Result1);
-                        {error, _} ->
-                            IQ#iq{type = error, sub_el = [SubEl, ?AFT_ERR_DATABASE]}
-                    end;
+                    {ok, Result1} = odbc_organization:get_link_project(S, ProID),
+                    lists:foreach(fun({Project}) ->
+                        {ok, Result2} = odbc_organization:get_all_jid(S, Project),
+                         push_message(ProID, S, Result2, <<"delete_member">>, Content)
+                    end,
+                    Result1),
+                    IQ#iq{type = result};
                 _ ->
                     IQ#iq{type = error, sub_el = [SubEl, ?AFT_ERR_DATABASE]}
-            end,
+            end
             %% TOFIX: finish task by this user, delete it in task? , push notice into task and event, any more???
-            IQ#iq{type = result}
     end;
 delete_member(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
@@ -437,10 +459,16 @@ list_project_ex(LServer, BaseJID, Type) ->
     case R of
         {ok, Result} ->
             F = mochijson2:encoder([{utf8, true}]),
-            Json1 = [{struct, [{"id", R1}, {"name", R2}, {"description", R3}, {"status", R4},
-                               {"admin", R5}, {"start_time", R6}, {"end_time", R7}, {"job_tag", R8},
-                               {"member_tag", R9}, {"link_tag", R10}]}
-                     || {R1, R2, R3, R4, R5, R6, R7, R8, R9, R10} <- Result ],
+            Json1 = [{struct, [{"id", R1}, {"name", R2}, {"description", R3},
+                                {"photo",
+                                    case R4 of
+                                        null -> <<>>;
+                                        <<>> -> <<>>;
+                                        _ -> list_to_binary(make_head_url(binary_to_list(R4)))
+                                    end },
+                               {"status", R5}, {"admin", R6}, {"start_time", R7}, {"end_time", R8},
+                               {"job_tag", R9}, {"member_tag", R10}, {"link_tag", R11}]}
+                     || {R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11} <- Result ],
             Json = iolist_to_binary( F( Json1 ) ),
             {ok, Json};
         {error, _Reason} ->
@@ -473,13 +501,17 @@ create_ex(LServer, ProjectName, BaseJID, Template, Job) ->
             case odbc_organization:node_exist(LServer, Template, Job) of
                 {ok, true} ->
                     case odbc_organization:add_project(LServer, #project{name = ProjectName, description = <<"">>, admin = BaseJID}, Template, Job) of
-                        {ok, #project{id = Id, name = _Name, description = _Desc, job_tag = JobTag, start_at = StartTime},
-                         #node{id = JobId, name=JobName, department = Part}} ->
+                        {ok, #project{id = Id, name = _Name, photo = Photo ,description = _Desc, job_tag = JobTag, start_at = StartTime},
+                         #node{id = JobId, name=JobName, lft = Left, rgt = Right, department = Part}} ->
+                            PhotoURL = list_to_binary(make_head_url(binary_to_list(Photo))),
                             {ok, <<"{\"project\":{\"id\":\"", Id/binary, "\",\"name\":\"", ProjectName/binary,
-                                   "\",\"job_tag\":\"", JobTag/binary, "\",\"member_tag\":\"", JobTag/binary,
-                                   "\",\"link_tag\":\"", JobTag/binary, "\",\"start_time\":\"", StartTime/binary, "\"},
-                             \"member\":{\"jid\":\"", BaseJID/binary, "\",\"job_id\":\"", JobId/binary,
-                                   "\",\"job_name\":\"", JobName/binary, "\",\"part\":\"", Part/binary, "\"}}">>};
+                                    "\",\"photo\":\"", PhotoURL/binary, "\",\"job_tag\":\"", JobTag/binary,
+                                    "\",\"member_tag\":\"", JobTag/binary, "\",\"link_tag\":\"", JobTag/binary,
+                                    "\",\"start_time\":\"", StartTime/binary, "\"},
+                                    \"job\":{\"job_id\":\"", JobId/binary, "\",\"job_name\":\"", JobName/binary,
+                                    "\",\"left\":\"", Left/binary, "\",\"right\":\"", Right/binary,
+                                    "\",\"part\":\"", Part/binary, "\"},
+                                    \"member\":{\"jid\":\"", BaseJID/binary, "\"}}">>};
                         {error, _} ->
                             ?ERROR_MSG("Create Project failed, ProjectName=~p.", [ProjectName]),
                             {error, ?AFT_ERR_DATABASE}
@@ -805,6 +837,25 @@ delete_member_ex(LServer, ProID, BaseJID, JID) ->
             {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
     end.
 
+set_photo_ex(LServer, ProID, BaseJID, Photo) ->
+    case is_admin(LServer, BaseJID, ProID) of
+        true ->
+            case odbc_organization:set_photo(LServer, ProID, Photo) of
+                ok -> ok;
+                _ -> {error, ?AFT_ERR_DATABASE}
+            end;
+        false ->
+            {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
+    end.
+
+get_photo_ex(LServer, ProID) ->
+    case odbc_organization:get_photo(LServer, ProID) of
+        {ok, []} ->
+            {ok, <<"{\"project\":\"", ProID/binary, "\", \"photo\":\"\"}">>};
+        {ok, [{Photo}]} ->
+            {ok, <<"{\"project\":\"", ProID/binary, "\", \"photo\":\"", Photo/binary ,"\"}">>}
+    end.
+
 
 %% ------------------------------------------------------------------
 %% helper function.
@@ -924,3 +975,29 @@ parse_json_list(_, [], Result) ->
 parse_json_list(Keys, [{struct, H} | T], Result) ->
     R = parse_item(Keys, H, []),
     parse_json_list(Keys, T, [R | Result]).
+
+
+s3_bucket_url(PublicBucket) ->
+    {ok, Host} = application:get_env(ejabberd, s3_host),
+    Bucket = case PublicBucket of
+                     true ->
+                         {ok, Result} = application:get_env(ejabberd, s3_public_bucket),
+                         Result;
+                     _ ->
+                         {ok, Result} = application:get_env(ejabberd, s3_bucket),
+                         Result
+                 end,
+
+    %% which method is more effective ???
+    %% list:flatten( ["http://" | [Bucket | ["." | Host]] ] ).
+    "http://" ++ Bucket ++ "." ++ Host.
+
+make_head_url( File ) ->
+    URL = s3_bucket_url(true),
+    case string:right(URL, 1) of
+        "/" ->
+            string:concat(URL, File);
+        _ ->
+            URL ++ "/" ++ File
+    end.
+

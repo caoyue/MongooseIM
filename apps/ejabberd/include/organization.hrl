@@ -34,6 +34,7 @@
     id :: integer()|binary()|undefined,
     name :: binary(),
     description :: binary(),
+    photo :: binary(),
     status :: integer(),
     admin :: binary(),
     start_at :: binary(),
