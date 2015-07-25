@@ -30,7 +30,7 @@
 -behaviour(mod_vcard).
 
 %% mod_vcards callbacks
--export([init/2,remove_user/2, get_vcard/2, set_vcard/4, search/4, search_fields/1, search2/3]).
+-export([init/2,remove_user/2, get_vcard/2, set_vcard/4, search/4, search_fields/1]).
 
 %% API
 -export( [search/3, set_vcard_with_no_transaction/4] ).
@@ -154,70 +154,6 @@ set_vcard(User, VHost, VCard, VCardSearch) ->
     ejabberd_hooks:run(vcard_set, VHost, [LUser, VHost, VCard]),
     ok.
 
-
-get_vcard_ex(UserName, Server) ->
-    case get_vcard(UserName, Server) of
-        {ok, [VCARD]} ->
-            case xml:get_subtag(VCARD, <<"HEADPHOTO">>) of
-                false ->
-                    Photo = xml:get_subtag(VCARD, <<"PHOTO">>),
-                    case Photo of
-                        false -> {ok, nophoto};
-                        _ ->
-                            case xml:get_subtag( Photo, <<"BINVAL">> ) of
-                                false ->
-                                    {ok, nophoto};
-                                Binval ->
-                                    case xml:get_tag_cdata(Binval) of
-                                        <<"">> -> {ok, nophoto};
-                                        Data ->{ok, Data}
-                                    end
-                            end
-                    end;
-                HeadPhone ->
-                    case xml:get_tag_cdata(HeadPhone) of
-                        <<>> -> {ok, nophoto};
-                        UrlData -> {ok, UrlData}
-                    end
-            end;
-
-        { error, _ } ->
-            {error, error}
-    end.
-
-search2(LServer, Type, Key) ->
-    Select = case Type of
-                 <<"nick">> ->
-                     <<"select lusername, server, tel, nickname from vcard_search where lnickname='">>;
-                 <<"phone_2">> ->
-                     <<"select lusername, server, tel, nickname from vcard_search where ltel='">>
-             end,
-    case catch  ejabberd_odbc:sql_query( LServer,
-                                         [ Select, ejabberd_odbc:escape(Key), <<"';">>]) of
-        {selected, [<<"lusername">>, <<"server">>, <<"tel">>, <<"nickname">>], []} ->
-            error;
-        {selected, [<<"lusername">>, <<"server">>, <<"tel">>, <<"nickname">>], List} ->
-            R = lists:foldl(fun(E, AccIn) ->
-                            {U, S, T, N} = E,
-                            P = case get_vcard_ex( U, S ) of
-                                    {ok, nophoto} -> <<>>;
-                                    {ok, Data} -> Data;
-                                    {error, error} -> <<>>
-                                end,
-                            AccIn1 = if AccIn =:= <<>> -> <<>>;
-                                        true -> <<AccIn/binary, ",">>
-                                     end,
-                            <<AccIn1/binary, "{\"jid\":\"", U/binary, "@", S/binary, "\", \"nickname\":\"", N/binary,
-                              "\", \"phone\":\"", T/binary, "\", \"photo\":\"", P/binary,  "\"}">>
-                        end,
-                        <<>>,
-                        List),
-            {ok, <<"[", R/binary, "]">>};
-
-        _ ->
-            error
-    end.
-
 search(LServer, Type, Key) ->
 
     Select = case Type of
@@ -231,11 +167,24 @@ search(LServer, Type, Key) ->
                                          [ Select, Key, <<"';">>]) of
         {selected, [<<"lusername">>, <<"server">>, <<"nickname">>], [ {UserName, Server, Nickname} ]} ->
             JID = << UserName/binary, "@", Server/binary >>,
-            case get_vcard_ex(UserName, Server) of
-                {ok, Data} ->
-                    {ok, JID, Nickname, Data};
-                {error, error} ->
-                    {error, false, false, false}
+            case get_vcard( UserName, Server ) of
+                { ok, [VCARD] } ->
+                    Photo = xml:get_subtag( VCARD, <<"PHOTO">> ),
+                    case Photo of
+                        false -> { ok, JID, Nickname, nophoto };
+                        _ ->
+                            case xml:get_subtag( Photo, <<"BINVAL">> ) of
+                                false ->
+                                    { ok, JID, Nickname, nophoto };
+                                Binval ->
+                                    case xml:get_tag_cdata( Binval ) of
+                                        <<"">> -> { ok, JID, Nickname, nophoto };
+                                        Data ->{ ok, JID, Nickname, Data }
+                                    end
+                            end
+                    end;
+                { error, _ } ->
+                    { error, false, false, false }
             end;
         _ ->
             { error, false, false, false }
