@@ -2016,6 +2016,12 @@ presence_update(From, Packet, StateData) ->
                                     end,
                     presence_broadcast_first(From, NewStateData1, Packet);
                 true ->
+                    %% sharp save md5.
+                    #jid{lserver = LServer }= From,
+                    XEle = xml:get_subtag(Packet, <<"x">>),
+                    PhotoEle = xml:get_subtag(XEle, <<"photo">>),
+                    VCardTag = xml:get_tag_cdata(PhotoEle),
+                    mod_vcard_odbc:update_vcard_tag(LServer, StateData#state.user, VCardTag),
                     presence_broadcast_to_trusted(NewStateData,
                                                   From,
                                                   NewStateData#state.pres_f,

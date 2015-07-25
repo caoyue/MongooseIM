@@ -219,11 +219,12 @@ try_register(Username, Server, _Password, Phone, Nick) ->
         [{<<"xmlns">>, ?NS_VCARD}],
         [{xmlel, <<"NICKNAME">>, [], [{xmlcdata, Nickname}]},
          {xmlel, <<"TEL">>, [], [{xmlel, <<"NUMBER">>, [], [{xmlcdata, Phone}]}]}]},
+    VcardTag = list_to_binary(jlib:md5_hex(xml:element_to_string(VCardXml))),
     F = fun() ->
         case catch odbc_queries:add_user(LServer, Username, Pass, Phone, <<>>) of
             {updated, 1} ->
                 {ok, VCardSearch} = mod_vcard:prepare_vcard_search_params(Username, LServer, VCardXml),
-                mod_vcard_odbc:set_vcard_with_no_transaction(Username, LServer, VCardXml, VCardSearch),
+                mod_vcard_odbc:set_vcard_with_no_transaction(Username, LServer, VCardXml, VcardTag, VCardSearch),
                 ok;
             _ ->
                 exists

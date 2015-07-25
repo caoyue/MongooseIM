@@ -101,7 +101,7 @@
          remove_old_offline_messages/2,
          remove_expired_offline_messages/2,
          remove_offline_messages/3,
-         set_vcard_with_no_transaction/28]).
+         set_vcard_with_no_transaction/29]).
 
 %% We have only two compile time options for db queries:
 %%-define(generic, true).
@@ -596,10 +596,10 @@ del_user_private_storage(LServer, Username) ->
 set_vcard_with_no_transaction(LServer, LUsername, SBDay, SCTRY, SEMail, STel, SFN, SFamily, SGiven,
                               SLBDay, SLCTRY, SLEMail, SLTel, SLFN, SLFamily, SLGiven, SLLocality,
                               SLMiddle, SLNickname, SLOrgName, SLOrgUnit, SLocality, SMiddle,
-                              SNickname, SOrgName, SOrgUnit, SVCARD, Username) ->
+                              SNickname, SOrgName, SOrgUnit, SVCARD, SVCardTag, Username) ->
     update_t(<<"vcard">>,
-             [<<"username">>, <<"server">>, <<"vcard">>],
-             [LUsername, LServer, SVCARD],
+             [<<"username">>, <<"server">>, <<"vcard">>, <<"tag">>],
+             [LUsername, LServer, SVCARD, SVCardTag],
              [<<"username='">>, LUsername, <<"' and server='">>, LServer, "'"]),
     update_set_t(<<"vcard_search">>,
                  [<<"username">>, Username,

@@ -79,11 +79,12 @@ CREATE TABLE spool (
 
 CREATE INDEX i_despool USING BTREE ON spool(username);
 
-
+-- tag: md5 32byte.
 CREATE TABLE vcard (
     username varchar(150),
     server varchar(150),
     vcard mediumtext NOT NULL,
+    tag  char(32) NOT NULL,
     created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (username, server)
 ) CHARACTER SET utf8;

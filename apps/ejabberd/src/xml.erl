@@ -31,6 +31,7 @@
          element_to_binary/1,
          crypt/1,
          remove_cdata/1,
+         remove_tag_attr/2,
          get_cdata/1, get_tag_cdata/1,
          get_attr/2, get_attr_s/2,
          get_tag_attr/2, get_tag_attr_s/2,
@@ -242,6 +243,11 @@ get_attr_s(AttrName, Attrs) ->
         _ ->
             context_default(AttrName)
     end.
+
+-spec remove_tag_attr(binary(), jlib:xmlel() ) -> jlib:xmlel().
+remove_tag_attr(AttrName, #xmlel{attrs = Attrs} = Tag) ->
+    NewAttrs = lists:keydelete(AttrName, 1, Attrs),
+    Tag#xmlel{attrs=NewAttrs}.
 
 
 -spec get_tag_attr(binary() | string(), jlib:xmlel()
