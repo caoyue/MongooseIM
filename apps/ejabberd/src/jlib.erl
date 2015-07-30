@@ -69,8 +69,6 @@
          stream_errort/3,
 	     remove_delay_tags/1]).
 
--export([aft_stanza_error/1]).
-
 -include_lib("exml/include/exml.hrl").
 -include_lib("exml/include/exml_stream.hrl"). % only used to define stream types
 -include("jlib.hrl").
@@ -1020,13 +1018,6 @@ ip_to_list({A,B,C,D}) ->
     lists:flatten(io_lib:format("~w.~w.~w.~w",[A,B,C,D]));
 ip_to_list(IP) ->
     lists:flatten(io_lib:format("~w", [IP])).
-
--spec aft_stanza_error(Code :: binary()) -> #xmlel{}.
-aft_stanza_error(Code) ->
-    #xmlel{ name = <<"error">>
-        , attrs = [{<<"code">>, Code}]
-    }.
-
 
 %% TODO: remove<<"code" attribute (currently it used for backward-compatibility)
 -spec stanza_error( Code :: binary()

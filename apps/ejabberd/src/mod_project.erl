@@ -97,8 +97,12 @@ get_structure(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = get, sub_el = SubEl
     BaseJID = <<U/binary, "@", S/binary>>,
     {struct, Data} = mochijson2:decode(xml:get_tag_cdata(SubEl)),
     {_, Project} = lists:keyfind(<<"project">>, 1, Data),
+    ProjectTarget = case lists:keyfind(<<"project_target">>, 1, Data) of
+                        false -> false;
+                        {_, Target} -> Target
+                    end,
 
-    case get_structure_ex(S, BaseJID, Project) of
+    case get_structure_ex(S, BaseJID, Project, ProjectTarget) of
         {error, Error} ->
             IQ#iq{type = error, sub_el = [SubEl, Error]};
         {ok, Result} ->
@@ -475,24 +479,26 @@ list_project_ex(LServer, BaseJID, Type) ->
             {error, ?AFT_ERR_DATABASE}
     end.
 
-get_structure_ex(LServer, BaseJID, ProID) ->
+%% remove check authority???  %% (LServer, ProjectSelf, Jid, ProjectTarget)
+get_structure_ex(LServer, BaseJID, ProID, ProjectTarget) ->
     Valid = case odbc_organization:is_memeber(LServer, ProID, BaseJID) of
-                {ok, true} -> true;
-                {ok, false} -> is_predefine_template(LServer, ProID);
-                _ -> failed
+                {ok, true} ->
+                    case odbc_organization:is_link_member(LServer, ProID, BaseJID, ProjectTarget) of
+                        {ok, true} -> {true, ProjectTarget};
+                        {ok, false} ->{true, ProID}
+                    end;
+                {ok, false} -> {is_predefine_template(LServer, ProID), ProID}
             end,
     case Valid of
-        true ->
-            {ok, Result} = odbc_organization:get_structure(LServer, ProID),
+        {true, Project} ->
+            {ok, Result} = odbc_organization:get_structure(LServer, Project),
             Json1 = [{struct,[{<<"id">>, R1}, {<<"name">>, R2}, {<<"left">>, R3}, {<<"right">>, R4}, {<<"part">>, R5}]}
                      || {R1, R2, R3, R4, R5}<- Result],
             F = mochijson2:encoder([{utf8, true}]),
-            Json = iolist_to_binary( F( {struct, [{<<"project">>, ProID}, {<<"structure">>, Json1}]} )),
+            Json = iolist_to_binary( F( {struct, [{<<"project">>, Project}, {<<"structure">>, Json1}]} )),
             {ok, Json};
-        false ->
-            {error, ?AFT_ERR_INVALID_TEMPLATE};
-        failed ->
-            {error, ?AFT_ERR_DATABASE}
+        {false, _} ->
+            {error, ?AFT_ERR_INVALID_TEMPLATE}
     end.
 
 create_ex(LServer, ProjectName, BaseJID, Template, Job) ->
@@ -769,8 +775,8 @@ list_member_ex(LServer, ProID, BaseJID, ProjectTarget) ->
                 false ->
                     {ok, Result} = odbc_organization:get_all(LServer, ProID),
                     %%{ok, build_json([ {"project", ProID}, {"member", {["jid", "job_id", "job_name", "part"], Result, true}} ], <<>>)};
-                    Json = [{struct, [{<<"jid">>, R1}, {<<"job_id">>, R2}, {<<"job_name">>, R3}, {<<"part">>, R4}]}
-                            || {R1, R2, R3, R4} <- Result],
+                    Json = [{struct, [{<<"jid">>, R1}, {<<"job_id">>, R2}]}
+                            || {R1, R2, _R3, _R4} <- Result],
                     F = mochijson2:encoder([{utf8, true}]),
                     {ok, iolist_to_binary(F({struct, [{<<"project">>, ProID}, {<<"member">>, Json}]}))};
                 _ ->
@@ -778,8 +784,8 @@ list_member_ex(LServer, ProID, BaseJID, ProjectTarget) ->
                         {ok, true} ->
                             {ok, Result} = odbc_organization:get_all(LServer, ProjectTarget),
                             %%{ok, build_json([ {"project", ProjectTarget}, {"member", {["jid", "job_id", "job_name", "part"], Result, true}} ], <<>>)};
-                            Json = [{struct, [{<<"jid">>, R1}, {<<"job_id">>, R2}, {<<"job_name">>, R3}, {<<"part">>, R4}]}
-                                    || {R1, R2, R3, R4} <- Result],
+                            Json = [{struct, [{<<"jid">>, R1}, {<<"job_id">>, R2}]}
+                                    || {R1, R2, _R3, _R4} <- Result],
                             F = mochijson2:encoder([{utf8, true}]),
                             {ok, iolist_to_binary(F({struct, [{<<"project">>, ProjectTarget}, {<<"member">>, Json}]}))};
                         {ok, false} ->
