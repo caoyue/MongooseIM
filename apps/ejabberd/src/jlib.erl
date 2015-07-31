@@ -69,6 +69,8 @@
          stream_errort/3,
 	     remove_delay_tags/1]).
 
+-export([aft_stanza_error/3]).
+
 -include_lib("exml/include/exml.hrl").
 -include_lib("exml/include/exml_stream.hrl"). % only used to define stream types
 -include("jlib.hrl").
@@ -1030,6 +1032,23 @@ stanza_error(Code, Type, Condition) ->
                              , attrs = [{<<"xmlns">>, ?NS_STANZAS}]
                              }]
         }.
+
+-spec aft_stanza_error( Code :: binary()
+    , Type :: binary()
+    , Condition :: binary() | undefined) -> #xmlel{}.
+aft_stanza_error(Code, Type, Condition) ->
+    #xmlel{ name = <<"error">>
+          , attrs = [{<<"code">>, <<"500">>}, {<<"type">>, Type}]
+          , children = [ #xmlel{ name = Condition
+                               , attrs = [{<<"xmlns">>, ?NS_STANZAS}]
+
+                                },
+                         #xmlel{ name = <<"code">>
+                               , attrs = [{<<"xmlns">>, ?NS_AFT_ERROR}]
+                               , children = [ #xmlcdata{ content = Code}]
+                               }
+                       ]
+          }.
 
 -spec stanza_errort( Code :: binary()
                    , Type :: binary()
