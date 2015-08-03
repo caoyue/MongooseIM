@@ -155,11 +155,11 @@ get_all_nodes(LServer, Project) ->
 
 -spec get_link_project(binary(), odbc_organization:pro_type()) -> {ok, list()} | {error, _}.
 get_link_project(LServer, Project) ->
-    Query = ["select project_link.id2, project.name from project_link, project where
-             project_link.id1='", Project, "' and project_link.id2 = project.id and project_link.id2 in
-             (select id1 from project_link where id2='", Project ,"');"],
+    Query = ["select project_link.id2, project.name, project.photo, project.job_tag, project.member_tag
+             from project_link, project where project_link.id1='", Project, "' and project_link.id2 =
+             project.id and project_link.id2 in (select id1 from project_link where id2='", Project ,"');"],
     case ejabberd_odbc:sql_query(LServer, Query) of
-        {selected, [<<"id2">>, <<"name">>], Rs } ->
+        {selected, [<<"id2">>, <<"name">>, <<"photo">>, <<"job_tag">>, <<"member_tag">>], Rs } ->
             {ok, Rs};
         Reason ->
             {error, Reason}
@@ -447,9 +447,9 @@ finish_project(LServer, Project) ->
 
 -spec get_project(binary(), odbc_organization:pro_type()) -> {ok, list()} | {error, _}.
 get_project(LServer, Project) ->
-    Query = ["select id, name, description, status, admin, start_at, end_at, job_tag, member_tag, link_tag from project where id='", Project, "';"],
+    Query = ["select id, name, description, photo, status, admin, start_at, end_at, job_tag, member_tag, link_tag from project where id='", Project, "';"],
     case ejabberd_odbc:sql_query(LServer, Query) of
-        {selected, [<<"id">>, <<"name">>, <<"description">>, <<"status">>, <<"admin">>,
+        {selected, [<<"id">>, <<"name">>, <<"description">>, <<"photo">>, <<"status">>, <<"admin">>,
                     <<"start_at">>, <<"end_at">>, <<"job_tag">>, <<"member_tag">>, <<"link_tag">>], Rs} ->
             {ok, Rs};
         Reason ->

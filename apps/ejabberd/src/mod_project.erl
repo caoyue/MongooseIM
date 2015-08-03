@@ -279,13 +279,6 @@ add_member(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl} =
                 case odbc_organization:get_all_jid(S, ProID) of
                     {ok, Result} ->
                         push_message(ProID, S, Result, <<"add_member">>, Content),
-                        %% push notice to all link project members.
-                        {ok, Result1} = odbc_organization:get_link_project(S, ProID),
-                        lists:foreach(fun({Project, _}) ->
-                            {ok, Result2} = odbc_organization:get_all_jid(S, Project),
-                            push_message(ProID, S, Result2, <<"add_member">>, Content)
-                        end,
-                        Result1),
                         IQ#iq{type = result};
                     _ ->
                         IQ#iq{type = error, sub_el = [SubEl, ?AFT_ERR_DATABASE]}
@@ -312,13 +305,6 @@ delete_member(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl
                     Result0 = [{JID} | Result], %% include delete member.
                     Content = <<"{\"project\":\"", ProID/binary,  "\", \"member_tag\":\"", MemberTag/binary,  "\", \"member\":[\"", JID/binary, "\"]}">>,
                     push_message(ProID, S, Result0, <<"delete_member">>, Content),
-                    %% push notice to all link project member.
-                    {ok, Result1} = odbc_organization:get_link_project(S, ProID),
-                    lists:foreach(fun({Project, _}) ->
-                        {ok, Result2} = odbc_organization:get_all_jid(S, Project),
-                         push_message(ProID, S, Result2, <<"delete_member">>, Content)
-                    end,
-                    Result1),
                     IQ#iq{type = result};
                 _ ->
                     IQ#iq{type = error, sub_el = [SubEl, ?AFT_ERR_DATABASE]}
@@ -460,16 +446,17 @@ get_project_ex(LServer, BaseJID, ProID, ProjectTarget) ->
         {true, self} ->
             {ok, Result} = odbc_organization:get_project(LServer, ProID),
             F = mochijson2:encoder([{utf8, true}]),
-            Json1 = [{struct, [{"id", R1}, {"name", R2}, {"description", R3}, {"status", R4},
-                               {"admin", R5}, {"start_time", R6}, {"end_time", R7}, {"job_tag", R8},
-                               {"member_tag", R9}, {"link_tag", R10}]}
-                     || {R1, R2, R3, R4, R5, R6, R7, R8, R9, R10} <- Result ],
+            Json1 = [{struct, [{"id", R1}, {"name", R2}, {"description", R3}, {"photo", list_to_binary(make_head_url(binary_to_list(R4)))},
+                               {"status", R5}, {"admin", R6}, {"start_time", R7}, {"end_time", R8}, {"job_tag", R9},
+                               {"member_tag", R10}, {"link_tag", R11}]}
+                     || {R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11} <- Result ],
             Json = iolist_to_binary( F( Json1 ) ),
             {ok, Json};
         {true, link} ->
-            {ok, R1, R2, _R3, _R4, R5, _R6, _R7, R8, R9, _R10} = odbc_organization:get_project(LServer, ProjectTarget),
+            {ok, R1, R2, _R3, R4, _R5, _R6, _R7, _R8, R9, R10, _R11} = odbc_organization:get_project(LServer, ProjectTarget),
             F = mochijson2:encoder([{utf8, true}]),
-            Json = {struct, [{"id", R1}, {"name", R2}, {"admin", R5}, {"job_tag", R8}, {"member_tag", R9}]},
+            Json = {struct, [{"id", R1}, {"name", R2}, {"photo", list_to_binary(make_head_url(binary_to_list(R4)))},
+                {"job_tag", R9}, {"member_tag", R10}]},
             {ok, iolist_to_binary(F({struct, [{<<"self_project">>, ProID}, {<<"link_project">>, Json}]}))};
         false ->
             {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
@@ -786,7 +773,8 @@ list_link_project_ex(LServer, ProID, BaseJID) ->
         {ok, true} ->
             {ok, Result} = odbc_organization:get_link_project(LServer, ProID),
             %%{ok, build_json([ {"self_project", ProID}, {"link_project", {["id", "name"], Result, true}} ], <<>>)};
-            Json = [{struct, [{<<"id">>, R1}, {<<"name">>, R2}]} || {R1, R2} <- Result],
+            Json = [{struct, [{<<"id">>, R1}, {<<"name">>, R2}, {<<"photo">>, list_to_binary(make_head_url(binary_to_list(R3)))},
+                {<<"job_tag">>, R4}, {<<"member_tag">>, R5}]} || {R1, R2, R3, R4, R5} <- Result],
             F = mochijson2:encoder([{utf8, true}]),
             {ok, iolist_to_binary(F({struct, [{<<"self_project">>, ProID}, {<<"link_project">>, Json}]}))};
         {ok, false} ->
