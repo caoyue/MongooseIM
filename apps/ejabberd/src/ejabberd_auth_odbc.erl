@@ -218,7 +218,9 @@ try_register(Username, Server, _Password, Phone, Nick) ->
     VCardXml = {xmlel, <<"vCard">>,
         [{<<"xmlns">>, ?NS_VCARD}],
         [{xmlel, <<"NICKNAME">>, [], [{xmlcdata, Nickname}]},
-         {xmlel, <<"TEL">>, [], [{xmlel, <<"NUMBER">>, [], [{xmlcdata, Phone}]}]}]},
+         {xmlel, <<"TEL">>, [], [{xmlel, <<"HOME">>, [], []},
+                                 {xmlel, <<"CELL">>, [], []},
+                                 {xmlel, <<"NUMBER">>, [], [{xmlcdata, Phone}]}]}]},
     VcardTag = list_to_binary(jlib:md5_hex(xml:element_to_string2(VCardXml))),
     F = fun() ->
         case catch odbc_queries:add_user(LServer, Username, Pass, Phone, <<>>) of

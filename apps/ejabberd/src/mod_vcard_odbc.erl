@@ -30,7 +30,7 @@
 -behaviour(mod_vcard).
 
 %% mod_vcards callbacks
--export([init/2,remove_user/2, get_vcard/2, set_vcard/4, search/4, search_fields/1]).
+-export([init/2,remove_user/2, get_vcard/2, set_vcard/5, search/4, search_fields/1]).
 
 %% API
 -export( [search/3, set_vcard_with_no_transaction/5, update_vcard_tag/3] ).
@@ -111,13 +111,14 @@ set_vcard_with_no_transaction(User, VHost, VCard, VCardTag, VCardSearch) ->
                                                SMiddle, SNickname, SOrgName,
                                                SOrgUnit, SVCARD, SVCardTag, Username).
 
-set_vcard(User, VHost, VCard, VCardSearch) ->
+set_vcard(User, VHost, VCard, VCardTag, VCardSearch) ->
     LUser = jlib:nodeprep(User),
     Username = ejabberd_odbc:escape(User),
     LUsername = ejabberd_odbc:escape(LUser),
     LServer = ejabberd_odbc:escape(VHost),
     SVCARD = ejabberd_odbc:escape(
                xml:element_to_binary(VCard)),
+    SVCardTag = ejabberd_odbc:escape(VCardTag),
 
     SFN = ejabberd_odbc:escape(VCardSearch#vcard_search.fn),
     SLFN = ejabberd_odbc:escape(VCardSearch#vcard_search.lfn),
@@ -150,7 +151,7 @@ set_vcard(User, VHost, VCard, VCardSearch) ->
                            SLLocality, SLMiddle, SLNickname,
                            SLOrgName, SLOrgUnit, SLocality,
                            SMiddle, SNickname, SOrgName,
-                           SOrgUnit, SVCARD, Username),
+                           SOrgUnit, SVCARD, SVCardTag, Username),
 
     ejabberd_hooks:run(vcard_set, VHost, [LUser, VHost, VCard]),
     ok.
@@ -190,7 +191,7 @@ search(LServer, Type, Key) ->
     Select = case Type of
                  <<"nick">> ->
                      <<"select lusername, server, tel, nickname from vcard_search where lnickname='">>;
-                 <<"phone_2">> ->
+                 <<"phone">> ->
                      <<"select lusername, server, tel, nickname from vcard_search where ltel='">>
              end,
     case catch  ejabberd_odbc:sql_query( LServer,

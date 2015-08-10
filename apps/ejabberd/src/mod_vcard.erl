@@ -245,20 +245,30 @@ process_sm_iq(From, To, #iq{type = set, sub_el = VCARD1} = IQ) ->
                   ToUser == <<>>,
                   ToVHost == <<>> ->
 
-            {VCARD, NewTag} =
+            {VCARD, Tag} =
             case xml:get_tag_attr(<<"tag">>, VCARD1) of
                 {value, Value} ->
                     {xml:remove_tag_attr(<<"tag">>, VCARD1), Value};
                 _ ->
                     {VCARD1, false}
             end,
+            VCardTag =
+            case Tag of
+                false ->
+                    case vcard_tag(From) of
+                        <<>> -> list_to_binary(jlib:md5_hex(xml:element_to_string2(VCARD)));
+                        _ -> <<>>
+                    end;
+                _ ->
+                    Tag
+            end,
 
             {ok, VcardSearch} = prepare_vcard_search_params(FromUser, FromVHost, VCARD),
-            case catch ?BACKEND:set_vcard(FromUser, FromVHost, VCARD, VcardSearch) of
+            case catch mod_vcard_odbc:set_vcard(FromUser, FromVHost, VCARD, VCardTag, VcardSearch) of
                 ok ->
-                    if NewTag =/= false -> mod_vcard_odbc:update_vcard_tag(FromVHost, FromUser, NewTag);
-                       true -> nothing_to_do
-                    end,
+                    %if NewTag =/= false -> mod_vcard_odbc:update_vcard_tag(FromVHost, FromUser, NewTag);
+                    %   true -> nothing_to_do
+                    %end,
                     IQ#iq{type = result,
                           sub_el = []};
                 {error, Reason} ->
@@ -275,7 +285,9 @@ process_sm_iq(From, To, #iq{type = set, sub_el = VCARD1} = IQ) ->
     end;
 process_sm_iq(_From, To, #iq{type = get, sub_el = SubEl} = IQ) ->
     #jid{luser = LUser, lserver = LServer} = To,
-    case SubEl#xmlel.name of
+
+    %% catch can't remove at here, as test case make IQ with sub_el is undefine, not xmlel type.
+    case catch SubEl#xmlel.name of
         <<"vCardTags">> ->
             JIDs = mochijson2:decode(xml:get_tag_cdata(SubEl)),
             {ok, Result} = vcard_tags(JIDs),
