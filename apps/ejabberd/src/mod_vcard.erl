@@ -398,19 +398,7 @@ parse_aft_submit_data(#xmlel{name = <<"x">>, attrs = Attrs, children = Els}) ->
     case xml:get_attr_s(<<"type">>, Attrs) of
         <<"aft_submit">> ->
             SearchType = xml:get_attr_s(<<"search_ID_type">>, Attrs),
-            if SearchType =:= <<"phone">>; SearchType =:= <<"email">> ->
-                    Data = lists:filter(fun(E) ->
-                                                case E of
-                                                    <<>> -> false;
-                                                    _ -> true end end,
-                                        binary:split(xml:get_cdata(Els),
-                                                     [<<",">>, <<" ">>, <<"\n">>], [global])),
-                    if length( Data ) >= 1 ->
-                            { SearchType, lists:nth( 1, Data ) };
-                       true ->
-                            invalid
-                    end;
-                SearchType =:= <<"phone_2">>; SearchType =:= <<"nick">> ->
+            if SearchType =:= <<"phone">>; SearchType =:= <<"nick">> ->
                    {struct, Data} = mochijson2:decode( xml:get_cdata(Els) ),
                    case lists:keyfind(<<"key">>, 1, Data) of
                        false ->
@@ -423,7 +411,7 @@ parse_aft_submit_data(#xmlel{name = <<"x">>, attrs = Attrs, children = Els}) ->
             end;
         _ -> invalid
     end.
-make_search2_response(IQ, Type, failed) ->
+make_search_response(IQ, Type, failed) ->
     IQ#iq{type = result,
         sub_el =
         [#xmlel{name = <<"query">>,
@@ -437,7 +425,7 @@ make_search2_response(IQ, Type, failed) ->
                 children =
                 [{xmlcdata, []}]
             }]}]};
-make_search2_response(IQ, Type, Result) ->
+make_search_response(IQ, Type, Result) ->
     IQ#iq{type = result,
         sub_el =
         [#xmlel{name = <<"query">>,
@@ -451,49 +439,6 @@ make_search2_response(IQ, Type, Result) ->
                 children =
                 [{xmlcdata, Result}]
             }]}]}.
-
-make_search_response(_, no, no, no, IQ, Type) ->
-    IQ#iq{type = result,
-          sub_el =
-              [#xmlel{name = <<"query">>,
-                      attrs =
-                          [{<<"xmlns">>, ?NS_SEARCH}],
-                      children =
-                          [#xmlel{name =
-                                      <<"x">>,
-                                  attrs =
-                                      [{<<"xmlns">>, ?NS_XDATA}, {<<"type">>, <<"result">>}, {<<"search_ID_type">>, Type}],
-                                  children =
-                                      [{xmlcdata, []}]
-                                 }]}]};
-make_search_response(Key, JID, NickName, Photo, IQ, Type) ->
-    List = [],
-    List1 = case Photo of
-                nophoto -> List;
-                _ -> [{photo, Photo} | List]
-            end,
-    List2 = case NickName of
-                <<"">> -> List1;
-                _ -> [{nickname, NickName} | List1]
-            end,
-    List3 =  [{jid, JID} | List2],
-    Result = {struct, [{Key, [{struct, List3}]}]},
-    BinResult = iolist_to_binary(mochijson2:encode(Result)),
-
-    IQ#iq{type = result,
-          sub_el =
-              [#xmlel{name = <<"query">>,
-                      attrs =
-                          [{<<"xmlns">>, ?NS_SEARCH}],
-                      children =
-                          [#xmlel{name =
-                                      <<"x">>,
-                                  attrs =
-                                      [{<<"xmlns">>, ?NS_XDATA}, {<<"type">>, <<"result">>}, {<<"search_ID_type">>, Type}],
-                                  children =
-                                      [{xmlcdata, BinResult}]
-                                 }]}]}.
-
 
 %% ------------------------------------------------------------------
 %% Internal
@@ -523,22 +468,13 @@ do_route(VHost, From, To, Packet, #iq{type = set,
                             Err = jlib:make_error_reply(Packet, ?ERR_BAD_REQUEST),
                             ejabberd_router:route(To, From, Err);
                         {KeyType, Data} ->
-                            if KeyType =:= <<"phone">>; KeyType =:= <<"email">> ->
+                            if KeyType =:= <<"phone">>; KeyType =:= <<"nick">> ->
                                     case mod_vcard_odbc:search(VHost, KeyType, Data) of
-                                        {ok, JID, NickName, Photo} ->
-                                            Response = make_search_response(Data, JID, NickName, Photo, IQ, KeyType),
-                                            ejabberd_router:route(To, From, jlib:iq_to_xml(Response));
-                                        {error, _, _, _} ->
-                                            Response = make_search_response(Data, no, no, no, IQ, KeyType),
-                                            ejabberd_router:route(To, From, jlib:iq_to_xml(Response))
-                                    end;
-                               KeyType =:= <<"phone_2">>; KeyType =:= <<"nick">> ->
-                                    case mod_vcard_odbc:search2(VHost, KeyType, Data) of
                                         {ok, Result} ->
-                                            Response = make_search2_response(IQ, KeyType, Result),
+                                            Response = make_search_response(IQ, KeyType, Result),
                                             ejabberd_router:route(To, From, jlib:iq_to_xml(Response));
                                         error ->
-                                            Response = make_search2_response(IQ, KeyType, failed),
+                                            Response = make_search_response(IQ, KeyType, failed),
                                             ejabberd_router:route(To, From, jlib:iq_to_xml(Response))
                                     end;
                                true ->

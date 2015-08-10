@@ -28,6 +28,7 @@
 -author('alexey@process-one.net').
 
 -export([element_to_string/1,
+         element_to_string2/1,
          element_to_binary/1,
          crypt/1,
          remove_cdata/1,
@@ -92,6 +93,14 @@ element_to_string(El) ->
             Result
     end.
 
+-spec element_to_string2(jlib:xmlel()) -> string() | none().
+element_to_string2(El) ->
+    case catch element_to_string_nocatch(El) of
+        {'EXIT', Reason} ->
+            erlang:error({badxml, El, Reason});
+        Result ->
+            Result
+    end.
 
 -spec element_to_string_nocatch(jlib:xmlcdata() | jlib:xmlel()) -> string().
 element_to_string_nocatch(El) ->
@@ -122,7 +131,7 @@ attrs_to_list(Attrs) ->
 
 -spec attr_to_list(jlib:binary_pair()) -> string().
 attr_to_list({Name, Value}) ->
-    [$\s, Name, $=, $', crypt(Value), $'].
+    [$\s, Name, $=, $", crypt(Value), $"].
 
 
 -spec crypt(binary() | string()) -> string().

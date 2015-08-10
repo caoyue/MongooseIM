@@ -33,7 +33,7 @@
 -export([init/2,remove_user/2, get_vcard/2, set_vcard/4, search/4, search_fields/1]).
 
 %% API
--export( [search/3, search2/3, set_vcard_with_no_transaction/5, update_vcard_tag/3] ).
+-export( [search/3, set_vcard_with_no_transaction/5, update_vcard_tag/3] ).
 
 -include("ejabberd.hrl").
 -include("jlib.hrl").
@@ -186,7 +186,7 @@ get_vcard_ex(UserName, Server) ->
             {error, error}
     end.
 
-search2(LServer, Type, Key) ->
+search(LServer, Type, Key) ->
     Select = case Type of
                  <<"nick">> ->
                      <<"select lusername, server, tel, nickname from vcard_search where lnickname='">>;
@@ -218,30 +218,6 @@ search2(LServer, Type, Key) ->
         _ ->
             error
     end.
-
-search(LServer, Type, Key) ->
-
-    Select = case Type of
-                 <<"email">> ->
-                     <<"select lusername, server, nickname from vcard_search where lemail='">>;
-                 <<"phone">> ->
-                     <<"select lusername, server, nickname from vcard_search where ltel='">>
-             end,
-
-    case catch  ejabberd_odbc:sql_query( LServer,
-                                         [ Select, Key, <<"';">>]) of
-        {selected, [<<"lusername">>, <<"server">>, <<"nickname">>], [ {UserName, Server, Nickname} ]} ->
-            JID = << UserName/binary, "@", Server/binary >>,
-            case get_vcard_ex(UserName, Server) of
-                {ok, Data} ->
-                    {ok, JID, Nickname, Data};
-                {error, error} ->
-                    {error, false, false, false}
-            end;
-        _ ->
-            { error, false, false, false }
-    end.
-
 
 search(LServer, Data, _Lang, DefaultReportedFields) ->
     RestrictionSQL = make_restriction_sql(LServer, Data),

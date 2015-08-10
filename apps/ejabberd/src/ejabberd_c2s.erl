@@ -1892,9 +1892,9 @@ process_presence_probe(From, To, StateData) ->
                     Packet = xml:append_subtags(
                                StateData#state.pres_last,
                                %% To is the one sending the presence (the target of the probe)
-                               [jlib:timestamp_to_xml(Timestamp, utc, To, <<>>),
+                               [jlib:timestamp_to_xml(Timestamp, utc, To, <<>>)]),
                                 %% TODO: Delete the next line once XEP-0091 is Obsolete
-                                jlib:timestamp_to_xml(Timestamp)]),
+                                %%jlib:timestamp_to_xml(Timestamp)]),
                     case privacy_check_packet(StateData, To, From, Packet, out) of
                         deny ->
                             ok;
@@ -2018,10 +2018,16 @@ presence_update(From, Packet, StateData) ->
                 true ->
                     %% sharp save md5.
                     #jid{lserver = LServer }= From,
-                    XEle = xml:get_subtag(Packet, <<"x">>),
-                    PhotoEle = xml:get_subtag(XEle, <<"photo">>),
-                    VCardTag = xml:get_tag_cdata(PhotoEle),
-                    mod_vcard_odbc:update_vcard_tag(LServer, StateData#state.user, VCardTag),
+                    case xml:get_subtag(Packet, <<"x">>) of
+                        false -> nothing_to_do;
+                        XEle ->
+                            case xml:get_subtag(XEle, <<"photo">>) of
+                                false -> nothing_to_do;
+                                PhotoEle ->
+                                    VCardTag = xml:get_tag_cdata(PhotoEle),
+                                    mod_vcard_odbc:update_vcard_tag(LServer, StateData#state.user, VCardTag)
+                            end
+                    end,
                     presence_broadcast_to_trusted(NewStateData,
                                                   From,
                                                   NewStateData#state.pres_f,
@@ -3060,13 +3066,15 @@ add_timestamp(undefined, _Server, Packet) ->
     Packet;
 add_timestamp({_, _, Micro} = TimeStamp, Server, Packet) ->
     {D, {H, M, S}} = calendar:now_to_universal_time(TimeStamp),
-    Time = {D, {H, M, S, Micro}},
+    %%Time = {D, {H, M, S, Micro}},
+    Time = {D, {H, M, S}},
     case xml:get_subtag(Packet, <<"delay">>) of
         false ->
             %% TODO: Delete the next element once XEP-0091 is Obsolete
             TimeStampLegacyXML = timestamp_legacy_xml(Server, Time),
-            TimeStampXML = jlib:timestamp_to_xml(Time),
-            xml:append_subtags(Packet, [TimeStampLegacyXML, TimeStampXML]);
+            %%TimeStampXML = jlib:timestamp_to_xml(Time),
+            %%xml:append_subtags(Packet, [TimeStampLegacyXML, TimeStampXML]);
+            xml:append_subtags(Packet, [TimeStampLegacyXML]);
         _ ->
             Packet
     end.
