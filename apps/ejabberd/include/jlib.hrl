@@ -108,7 +108,7 @@
 -define(NS_STREAM_MGNT_3, <<"urn:xmpp:sm:3">>).
 
 -define(NS_SEARCH_PHONE, <<"aft:search-phone">>).
--define(NS_AFT_ERROR,    <<"aft:errors">>).
+-define(NS_AFT_ERROR,    <<"aft:error">>).
 
 -define(ERR_BAD_REQUEST,
         jlib:stanza_error(<<"400">>,<<"modify">>,<<"bad-request">>)).
