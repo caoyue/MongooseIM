@@ -88,7 +88,7 @@ get_members(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = Su
                     IQ#iq{type = error, sub_el = []}
             end;
         _ ->
-            IQ#iq{type = error, sub_el = []}
+            make_error_reply(IQ, <<"15101">>)
     end.
 
 %% @doc get groups by jid
@@ -99,7 +99,7 @@ get_groups(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = Sub
         {ok, Rs} when is_list(Rs) ->
             IQ#iq{type = result, sub_el = [SubEl#xmlel{children = [{xmlcdata, grouplist_to_json(Rs)}]}]};
         {error, _} ->
-            IQ#iq{type = error, sub_el = []}
+            make_error_reply(IQ, <<"15102">>)
     end.
 
 %% @doc get groupinfo by groupid
@@ -114,10 +114,10 @@ get_groupinfo(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = 
                     IQ#iq{type = result, sub_el = [SubEl#xmlel{children =
                     [{xmlcdata, group_to_json(Group)}]}]};
                 {error, _} ->
-                    IQ#iq{type = error, sub_el = []}
+                    make_error_reply(IQ, <<"15102">>)
             end;
         _ ->
-            IQ#iq{type = error, sub_el = []}
+            make_error_reply(IQ, <<"15101">>)
     end.
 
 
@@ -138,7 +138,7 @@ create_group(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = S
                 true ->
                     do_create_group(LServer, IQ, Group);
                 _ ->
-                    IQ#iq{type = error}
+                    make_error_reply(IQ, <<"15103">>)
             end;
         _ ->
             do_create_group(LServer, IQ, Group)
@@ -154,13 +154,13 @@ add_members(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = Su
         true ->
             MembersList = mochijson2:decode(xml:get_tag_cdata(SubEl)),
             case MembersList of
-                [] -> IQ#iq{type = error, sub_el = []};
+                [] -> make_error_reply(IQ, <<"15105">>);
                 _ ->
                     case odbc_groupchat:get_members_by_groupid(LServer, GroupId) of
                         {ok, MembersInfoList} when is_list(MembersInfoList) ->
                             case MembersInfoList of
                                 [] ->
-                                    IQ#iq{type = error, sub_el = []};
+                                    make_error_reply(IQ, <<"15105">>);
                                 _ ->
                                     ExistsMembers = [Jid || {Jid, _} <- MembersInfoList],
                                     NewMembers = lists:filter(fun(X) ->
@@ -169,11 +169,11 @@ add_members(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = Su
                                     do_add_members(LServer, GroupId, ExistsMembers, NewMembers, IQ, SubEl)
                             end;
                         {error, _} ->
-                            IQ#iq{type = error, sub_el = []}
+                            make_error_reply(IQ, <<"15102">>)
                     end
             end;
         _ ->
-            IQ#iq{type = error, sub_el = []}
+            make_error_reply(IQ, <<"15101">>)
     end.
 
 %% @doc create and add members to group
@@ -183,20 +183,21 @@ create_and_add(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el =
     GroupName = xml:get_tag_attr_s(<<"groupname">>, SubEl),
     GroupType = get_group_type(SubEl),
     Project = xml:get_tag_attr_s(<<"project">>, SubEl),
+    Avatar = xml:get_tag_attr_s(<<"avatar">>, SubEl),
     MembersList = mochijson2:decode(xml:get_tag_cdata(SubEl)),
     Group = #group{master = UserJid, groupname = GroupName,
-        type = GroupType, project = Project},
+        type = GroupType, project = Project, avatar = Avatar},
     case {MembersList, GroupType, Project} of
         {[], _, _} ->
-            IQ#iq{type = error};
+            make_error_reply(IQ, <<"15105">>);
         {_, ?TASK_GROUP, <<>>} ->
-            IQ#iq{type = error};
+            make_error_reply(IQ, <<"15105">>);
         {_, ?TASK_GROUP, _} ->
             case odbc_groupchat:is_in_project(LServer, [UserJid | MembersList], Project) of
                 true ->
                     do_create_add(LServer, IQ, Group, MembersList);
                 _ ->
-                    IQ#iq{type = error}
+                    make_error_reply(IQ, <<"15103">>)
             end;
         _ ->
             do_create_add(LServer, IQ, Group, MembersList)
@@ -221,10 +222,10 @@ set_groupname(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = 
                                 {<<"groupid">>, GroupId}, {<<"groupname">>, GroupName}]},
                             IQ#iq{type = result, sub_el = [Res]};
                         {error, _} ->
-                            IQ#iq{type = error, sub_el = []}
+                            make_error_reply(IQ, <<"15102">>)
                     end;
                 false ->
-                    IQ#iq{type = error, sub_el = []}
+                    make_error_reply(IQ, <<"15101">>)
             end
     end.
 
@@ -244,10 +245,10 @@ set_avatar(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = Sub
                                 LServer, MembersList, <<"avatar">>),
                             IQ#iq{type = result};
                         {error, _} ->
-                            IQ#iq{type = error, sub_el = []}
+                            make_error_reply(IQ, <<"15102">>)
                     end;
                 false ->
-                    IQ#iq{type = error, sub_el = []}
+                    make_error_reply(IQ, <<"15101">>)
             end
     end.
 
@@ -267,7 +268,7 @@ set_nickname(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = S
             end,
             IQ#iq{type = result, sub_el = [SubEl]};
         _ ->
-            IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+            make_error_reply(IQ, <<"15102">>)
     end.
 
 %% @doc complete task
@@ -286,12 +287,12 @@ complete_task(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = 
                         _ ->
                             error
                     end,
-                    IQ#iq{type = result};
+                    IQ#iq{type = result, sub_el = SubEl};
                 _ ->
-                    IQ#iq{type = error}
+                    make_error_reply(IQ, <<"15102">>)
             end;
         _ ->
-            IQ#iq{type = error}
+            make_error_reply(IQ, <<"15104">>)
     end.
 
 %% @doc remove members from group
@@ -310,10 +311,10 @@ remove_members(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el =
                         [UserJid] ->
                             do_remove_members(IQ, LServer, GroupId, MembersList);
                         _ ->
-                            IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+                            make_error_reply(IQ, <<"15104">>)
                     end;
                 _ ->
-                    IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+                    make_error_reply(IQ, <<"15101">>)
             end
     end.
 
@@ -332,13 +333,13 @@ dismiss_group(#jid{luser = LUser, lserver = LServer} = _From, _To, #iq{sub_el = 
                                 [Jid || {Jid, _} <- MembersInfoList], <<"dismiss">>),
                             IQ#iq{type = result, sub_el = [SubEl]};
                         _ ->
-                            IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+                            make_error_reply(IQ, <<"15102">>)
                     end;
                 _ ->
-                    IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+                    make_error_reply(IQ, <<"15102">>)
             end;
         _ ->
-            IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+            make_error_reply(IQ, <<"15104">>)
     end.
 
 
@@ -374,7 +375,7 @@ do_create_add(LServer, #iq{sub_el = SubEl} = IQ, #group{master = UserJid,
                 ],
                 children = [{xmlcdata, members_to_json(MembersInfoList)}]}]};
         {error, _} ->
-            IQ#iq{type = error, sub_el = []}
+            make_error_reply(IQ, <<"15102">>)
     end.
 
 do_add_members(LServer, GroupId, ExistsMembers, NewMembers, IQ, SubEl) ->
@@ -400,10 +401,10 @@ do_add_members(LServer, GroupId, ExistsMembers, NewMembers, IQ, SubEl) ->
                                     children = [{xmlcdata,
                                         members_to_json(MembersResult)}]}]};
                         {error, _} ->
-                            IQ#iq{type = error, sub_el = []}
+                            make_error_reply(IQ, <<"15102">>)
                     end;
                 {error, _} ->
-                    IQ#iq{type = error, sub_el = []}
+                    make_error_reply(IQ, <<"15104">>)
             end
     end.
 
@@ -421,7 +422,7 @@ do_remove_members(#iq{sub_el = SubEl} = IQ, LServer, GroupId, MembersList) ->
             end,
             IQ#iq{type = result, sub_el = [SubEl]};
         _ ->
-            IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}
+            make_error_reply(IQ, <<"15102">>)
     end.
 
 push_groupmember(GroupId, GroupName, GroupOwner, Server, ToList, MembersInfoList, Action) ->
@@ -497,4 +498,19 @@ get_group_type(SubEl) ->
             R
     end.
 
+-spec make_error_reply(#iq{}, binary()) -> #iq{}.
+make_error_reply(#iq{sub_el = SubEl} = IQ, Code) ->
+    Err = #xmlel{name = <<"error">>,
+        attrs = [{<<"code">>, <<"500">>}, {<<"type">>, <<"cancel">>}],
+        children = [
+            #xmlel{name = <<"undefined-condition">>,
+                attrs = [{<<"xmlns">>, <<"aft:error">>}]
+            },
+            #xmlel{name = <<"code">>
+                , attrs = [{<<"xmlns">>, ?NS_AFT_ERROR}]
+                , children = [#xmlcdata{content = Code}]
+            }
+        ]
+    },
+    IQ#iq{type = error, sub_el = [SubEl, Err]}.
 
