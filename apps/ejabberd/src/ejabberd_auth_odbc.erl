@@ -52,7 +52,9 @@
          plain_password_required/0,
          phonelist_search/2,
          prepare_password/2,
-         user_info/2
+         user_info/2,
+         get_phone_email/3,
+         update_phone/3
         ]).
 
 -export([login/2, get_password/3]).
@@ -213,7 +215,7 @@ try_register(Username, Server, _Password, Phone, Nick) ->
     Pass = {<<"">>, <<"">>},
     LServer = jlib:nameprep(Server),
     %% modify 'TEL' element about standard vcard format as:
-    %% 1.only one 'TEL' in vcard; 2.keep 'NUMBER' in 'TEL', other element ignored.
+    %% 1.only one 'TEL' in vcard; 2.keep 'NUMBER' in 'TEL', also keep 'HOME' and 'CELL' in 'TEL', other element ignored.
     %% vcard format: <VCARD> <TEL> <NUMBER>1388888888</NUMBER> </TEL> ...</VCARD>
     VCardXml = {xmlel, <<"vCard">>,
         [{<<"xmlns">>, ?NS_VCARD}],
@@ -334,10 +336,10 @@ do_get_password(User, Server) ->
             case scram:deserialize(PassDetails) of
                 {ok, #scram{} = Scram} ->
                     {Username,
-                        {base64:decode(Scram#scram.storedkey),
-                            base64:decode(Scram#scram.serverkey),
-                            base64:decode(Scram#scram.salt),
-                            Scram#scram.iterationcount}
+                     {base64:decode(Scram#scram.storedkey),
+                      base64:decode(Scram#scram.serverkey),
+                      base64:decode(Scram#scram.salt),
+                      Scram#scram.iterationcount}
                     };
                 _ ->
                     false
@@ -363,7 +365,6 @@ get_password_s(User, Server) ->
                     <<"">>
             end
     end.
-
 
 -spec is_user_exists(User :: ejabberd:user(),
                      Server :: ejabberd:server()
@@ -494,8 +495,8 @@ get_password(_User, _Server, _DefaultValue) -> erlang:error(not_implemented).
 
 user_info(Server, Phone) ->
     LServer = jlib:nameprep(Server),
-    Sel = ["select username, password, pass_details from users where cellphone='"],
-    try ejabberd_odbc:sql_query(LServer, [Sel, Phone, "';"]) of
+    Query = ["select username, password, pass_details from users where cellphone='"],
+    try ejabberd_odbc:sql_query(LServer, [Query, Phone, "';"]) of
         {selected, [<<"username">>, <<"password">>, <<"pass_details">>], [{UserName, Password, PasswordDetails}]} ->
             {info, {UserName, Password, PasswordDetails}};
         {selected, [<<"username">>, <<"password">>, <<"pass_details">>], []} ->
@@ -504,4 +505,83 @@ user_info(Server, Phone) ->
             {error, Error} %% Typical error is that table doesn't exist
     catch
         _:B -> {error, B} %% Typical error is database not accessible
+    end.
+
+get_phone_email(User, Server, IsPhone) ->
+    LServer = jlib:nameprep(Server),
+    LUser = jlib:nodeprep(User),
+
+    Name = case IsPhone of
+               true -> "cellphone";
+               _ -> "email"
+           end,
+    Query = ["select ", Name, " from users where username='", LUser, "';"],
+    case ejabberd_odbc:sql_query(LServer, Query) of
+        %{selected, _, []} ->
+        %    not_exist;
+        {selected, _, [{<<>>}]} -> %% should not occur.
+            false;
+        {selected, _, [{null}]} -> %% should not occur.
+            false;
+        {selected, _, [{Result}]} ->
+            Result;
+        _ ->
+            false
+    end.
+
+update_phone(Username, Server, Phone) ->
+    LServer = jlib:nameprep(Server),
+    LUser = jlib:nodeprep(Username),
+
+    Query0 = ["select vcard from vcard where username='", LUser, "' and server='", LServer, "';"],
+    Query1 = ["update users set cellphone='", Phone, "' where username='", LUser, "';"],
+    F = fun() ->
+        VCard = case ejabberd_odbc:sql_query_t(Query0) of
+                                {selected, _, [{V}]} -> V;
+                                _ -> <<>>
+                end,
+        NewVCard = update_vcard_number(VCard, Phone),
+        VcardTag = list_to_binary(jlib:md5_hex(xml:element_to_string2(NewVCard))),
+        {ok, VCardSearch} = mod_vcard:prepare_vcard_search_params(Username, LServer, NewVCard),
+        case ejabberd_odbc:sql_query_t(Query1) of
+            {updated, 1} ->
+                mod_vcard_odbc:set_vcard_with_no_transaction(Username, LServer, NewVCard, VcardTag, VCardSearch),
+                true;
+            _ ->
+                false
+        end
+    end,
+
+    case ejabberd_odbc:sql_transaction(LServer, F) of
+        {atomic, true} ->
+            true;
+        _ ->
+            false
+    end.
+
+remove_element_children(#xmlel{children = Children}, Name) ->
+    lists:filter(fun(E) ->
+        case E of
+            #xmlel{name=Name} -> false;
+            _ -> true
+        end
+    end,
+    Children).
+
+update_vcard_number(VCard, Number) ->
+    TelXmlEl = {xmlel, <<"TEL">>, [], [{xmlel, <<"HOME">>, [], []},
+        {xmlel, <<"CELL">>, [], []},
+        {xmlel, <<"NUMBER">>, [], [{xmlcdata, Number}]}]},
+
+    case xml_stream:parse_element(VCard) of
+        #xmlel{name = <<"vCard">>} = VCardXml ->
+            FilterChildren = remove_element_children(VCardXml, <<"TEL">>),
+            NewChildren = [TelXmlEl | FilterChildren],
+            VCardXml#xmlel{children = NewChildren};
+        _ ->
+            {xmlel, <<"vCard">>,
+                [{<<"xmlns">>, ?NS_VCARD}],
+                [{xmlel, <<"TEL">>, [], [{xmlel, <<"HOME">>, [], []},
+                                         {xmlel, <<"CELL">>, [], []},
+                                         {xmlel, <<"NUMBER">>, [], [{xmlcdata, Number}]}]}]}
     end.

@@ -2016,7 +2016,7 @@ presence_update(From, Packet, StateData) ->
                                     end,
                     presence_broadcast_first(From, NewStateData1, Packet);
                 true ->
-                    %% sharp save md5.
+                    %% save md5 of vcard.
                     #jid{lserver = LServer }= From,
                     case xml:get_subtag(Packet, <<"x">>) of
                         false -> nothing_to_do;

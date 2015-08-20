@@ -108,6 +108,8 @@
 -define(NS_STREAM_MGNT_3, <<"urn:xmpp:sm:3">>).
 
 -define(NS_SEARCH_PHONE, <<"aft:search-phone">>).
+-define(NS_AFT_ERROR,    <<"aft:error">>).
+-define(NS_AFT_INFORMATION, <<"aft:information">>).
 
 -define(ERR_BAD_REQUEST,
         jlib:stanza_error(<<"400">>,<<"modify">>,<<"bad-request">>)).
@@ -315,33 +317,37 @@
 %%--------------------------------------------------------------------
 %% system error: 10000 ~ 10999
 -define(AFT_ERR_DATABASE,
-    jlib:stanza_error(<<"10000">>,<<"wait">>,<<"undefined-condition">>)).
+    jlib:aft_stanza_error(<<"10000">>,<<"wait">>,<<"undefined-condition">>)).
 -define(AFT_ERR_IP_FORBIDDEN,
-    jlib:stanza_error(<<"10001">>,<<"auth">>,<<"undefined-condition">>)).
+    jlib:aft_stanza_error(<<"10001">>,<<"auth">>,<<"undefined-condition">>)).
 -define(AFT_ERR_LOGIC_SERVER,
-    jlib:stanza_error(<<"10002">>,<<"wait">>,<<"undefined-condition">>)).
+    jlib:aft_stanza_error(<<"10002">>,<<"wait">>,<<"undefined-condition">>)).
+-define(AFT_ERR_PRIVILEGE_NOT_ENOUGH,
+    jlib:aft_stanza_error(<<"10003">>,<<"auth">>,<<"undefined-condition">>)).
 
 %% account error: 11000 ~ 11999
 -define(AFT_ERR_GET_CODE_SO_QUICKLY,
-    jlib:stanza_error(<<"11000">>,<<"wait">>,<<"undefined-condition">>)).
+    jlib:aft_stanza_error(<<"11000">>,<<"wait">>,<<"undefined-condition">>)).
 -define(AFT_ERR_BAD_PHONE_FORMAT,
-    jlib:stanza_error(<<"11001">>,<<"modify">>,<<"undefined-condition">>)).
+    jlib:aft_stanza_error(<<"11001">>,<<"modify">>,<<"undefined-condition">>)).
 -define(AFT_ERR_REGISTER_SO_QUICKLY,
-    jlib:stanza_error(<<"11002">>,<<"cancel">>,<<"undefined-condition">>)).
+    jlib:aft_stanza_error(<<"11002">>,<<"cancel">>,<<"undefined-condition">>)).
 -define(AFT_ERR_BAD_CODE,
-    jlib:stanza_error(<<"11003">>,<<"modify">>,<<"undefined-condition">>)).
+    jlib:aft_stanza_error(<<"11003">>,<<"modify">>,<<"undefined-condition">>)).
 -define(AFT_ERR_PHONE_EXIST,
-    jlib:stanza_error(<<"11004">>,<<"modify">>,<<"undefined-condition">>)).
+    jlib:aft_stanza_error(<<"11004">>,<<"modify">>,<<"undefined-condition">>)).
 -define(AFT_ERR_PHONE_NOT_EXIST,
-    jlib:stanza_error(<<"11005">>,<<"modify">>,<<"undefined-condition">>)).
+    jlib:aft_stanza_error(<<"11005">>,<<"modify">>,<<"undefined-condition">>)).
 -define(AFT_ERR_WEAK_PASSWORD,
-    jlib:stanza_error(<<"11006">>,<<"modify">>,<<"undefined-condition">>)).
+    jlib:aft_stanza_error(<<"11006">>,<<"modify">>,<<"undefined-condition">>)).
 -define(AFT_ERR_BAD_PASSWORD_FORMAT,
-    jlib:stanza_error(<<"11007">>,<<"modify">>,<<"undefined-condition">>)).
+    jlib:aft_stanza_error(<<"11007">>,<<"modify">>,<<"undefined-condition">>)).
 -define(AFT_ERR_PASSWORD_SETTING_EXPIRE,
-    jlib:stanza_error(<<"11008">>,<<"cancel">>,<<"undefined-condition">>)).
+    jlib:aft_stanza_error(<<"11008">>,<<"cancel">>,<<"undefined-condition">>)).
 -define(AFT_ERR_BAD_NICK_FORMAT,
-    jlib:stanza_error(<<"11009">>,<<"modify">>,<<"undefined-condition">>)).
+    jlib:aft_stanza_error(<<"11009">>,<<"modify">>,<<"undefined-condition">>)).
+-define(AFT_ERR_BAD_PASSWORD,
+    jlib:aft_stanza_error(<<"11010">>,<<"modify">>,<<"undefined-condition">>)).
 %%--------------------------------------------------------------------
 
 

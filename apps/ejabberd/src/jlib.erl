@@ -69,7 +69,11 @@
          stream_errort/3,
 	     remove_delay_tags/1]).
 
--export([md5_hex/1]).
+-export([aft_stanza_error/3,
+         md5_hex/1,
+         generate_uuid/0,
+         random_code/0,
+         random_code/1]).
 
 -include_lib("exml/include/exml.hrl").
 -include_lib("exml/include/exml_stream.hrl"). % only used to define stream types
@@ -1033,6 +1037,23 @@ stanza_error(Code, Type, Condition) ->
                              }]
         }.
 
+-spec aft_stanza_error( Code :: binary()
+    , Type :: binary()
+    , Condition :: binary() | undefined) -> #xmlel{}.
+aft_stanza_error(Code, Type, Condition) ->
+    #xmlel{ name = <<"error">>
+        , attrs = [{<<"code">>, <<"500">>}, {<<"type">>, Type}]
+        , children = [ #xmlel{ name = Condition
+            , attrs = [{<<"xmlns">>, ?NS_STANZAS}]
+
+        },
+            #xmlel{ name = <<"code">>
+                , attrs = [{<<"xmlns">>, ?NS_AFT_ERROR}]
+                , children = [ #xmlcdata{ content = Code}]
+            }
+        ]
+    }.
+
 -spec stanza_errort( Code :: binary()
                    , Type :: binary()
                    , Condition :: binary()
@@ -1100,6 +1121,8 @@ remove_delay_tags(#xmlel{children = Els} = Packet) ->
 
 %% ============================================================================
 %% Put project public function here.
+
+%% -----------------------------------------
 %% md5 32byte.
 -spec md5_hex(Content :: list() | binary()) -> list().
 md5_hex(Content) ->
@@ -1117,3 +1140,41 @@ hex(N) when N < 10 ->
     $0+N;
 hex(N) when N >= 10, N < 16 ->
     $a + (N-10).
+
+
+%% -----------------------------------------
+%% generate uuid string.
+get_parts(<<TL:32, TM:16, THV:16, CSR:8, CSL:8, N:48>>) ->
+    [TL, TM, THV, CSR, CSL, N].
+
+to_string(UUID) ->
+    io_lib:format("~8.16.0b~4.16.0b~4.16.0b~2.16.0b~2.16.0b~12.16.0b", get_parts(UUID)).
+
+v4(R1, R2, R3, R4) ->
+    <<R1:48, 4:4, R2:12, 2:2, R3:32, R4:30>>.
+
+-spec generate_uuid() -> binary().
+generate_uuid() ->
+    list_to_binary(to_string(
+        v4(crypto:rand_uniform(1, round(math:pow(2, 48))) - 1,
+            crypto:rand_uniform(1, round(math:pow(2, 12))) - 1,
+            crypto:rand_uniform(1, round(math:pow(2, 32))) - 1,
+            crypto:rand_uniform(1, round(math:pow(2, 30))) - 1))).
+
+
+%% -----------------------------------------
+%% generate a random integer string.
+-spec random_code() -> list().
+random_code() ->
+    random_code( 6 ).
+
+-spec random_code(integer()) -> list().
+random_code(Length) ->
+    {A1, A2, A3} = now(),
+    random:seed(A1, A2, A3),
+    lists:foldl(fun(_E, Acc) ->
+        I1 = random:uniform(10),
+        I2 = I1 + 47, % 48 ~ 56,
+        [I2 | Acc]
+    end, [], lists:seq(1, Length)),
+    "666666". %% TOFIX delete this line when sms is ok.
