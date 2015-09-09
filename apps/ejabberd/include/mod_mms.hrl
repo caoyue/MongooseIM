@@ -3,9 +3,10 @@
 %%%
 %%%-------------------------------------------------------------------
 
-%% is private
--define(PUBLIC, <<"0">>).
--define(PRIVATE, <<"1">>).
+%% file type
+-define(AVATAR, <<"1">>).
+-define(MESSAGE, <<"2">>).
+-define(PROJECT, <<"3">>).
 
 -define(ENV(X), mod_mms_s3:get_env(X)).
 -define(S3_CONFIG, mod_mms_s3:config()).
@@ -16,9 +17,10 @@
 %% ==================
 
 -record(mms_file, {
+    id :: binary(),
     filename :: binary(),
     owner :: binary(),
     uid :: binary(),
-    private :: binary(),
+    type :: binary(),
     created_at :: integer()
 }).

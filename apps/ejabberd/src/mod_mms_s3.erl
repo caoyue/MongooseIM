@@ -35,25 +35,25 @@ secret() ->
     ?ENV(upload_secret).
 
 -spec bucket(binary()) -> binary() | undefined.
-bucket(?PUBLIC) ->
+bucket(?AVATAR) ->
     ?ENV(s3_public_bucket);
 bucket(_) ->
     ?ENV(s3_bucket).
 
 -spec get(binary(), integer()) -> iodata() | error.
-get(#mms_file{uid = Uid, private = ?PUBLIC}, _) ->
+get(#mms_file{uid = Uid, type = ?AVATAR}, _) ->
     Host = list_to_binary(?ENV(s3_host)),
-    Bucket = list_to_binary(bucket(?PUBLIC)),
+    Bucket = list_to_binary(bucket(?AVATAR)),
     <<"http://", Bucket/binary, ".", Host/binary, "/", Uid/binary>>;
-get(#mms_file{uid = Uid, private = Private}, Expire) ->
-    try erlcloud_s3:make_link(Expire, bucket(Private), Uid, ?S3_CONFIG) of
+get(#mms_file{uid = Uid, type = Type}, Expire) ->
+    try erlcloud_s3:make_link(Expire, bucket(Type), Uid, ?S3_CONFIG) of
         {_, H, P} -> H ++ P
     catch
         _:_ -> error
     end.
 
 -spec upload(#mms_file{}, binary()) -> ok | error.
-upload(#mms_file{uid = Uid, private = Private}, Content) ->
+upload(#mms_file{uid = Uid, type = Private}, Content) ->
     try erlcloud_s3:put_object(bucket(Private), binary_to_list(Uid), Content, ?S3_CONFIG) of
         _ -> ok
     catch

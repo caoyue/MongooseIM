@@ -326,7 +326,7 @@ CREATE TABLE groupinfo (
     owner varchar(250) CHARACTER SET binary NOT NULL,
     type tinyint NOT NULL default 1,  -- 1 - noraml group; 2 - task; 3 - event; 4 - file transfer
     status tinyint NOT NULL default 1, -- 1 - start; 2 - end;
-    project int NOT NULL default 0,
+    project int NULL,
     avatar varchar(250) CHARACTER SET binary,
     created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     end_at timestamp
@@ -363,9 +363,10 @@ CREATE UNIQUE INDEX push_token_index ON push_service (token);
 
 -- mms_file begin
 CREATE TABLE mms_file (
-    uid varchar(64) PRIMARY KEY,
+    id varchar(64) PRIMARY KEY,
+    uid varchar(64) NOT NULL,
     filename varchar(250) CHARACTER SET binary NOT NULL,
-    private bit NOT NULL default 1,
+    type tinyint unsigned NOT NULL default 1, -- file_type: 1. avatar, 2. message, 3. project library
     owner varchar(250) CHARACTER SET binary NOT NULL,
     created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) CHARACTER SET utf8;
