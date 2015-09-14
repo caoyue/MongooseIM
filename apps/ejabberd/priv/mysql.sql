@@ -482,3 +482,69 @@ CREATE TABLE favorite(
 CREATE INDEX i_jid ON favorite(jid);
 -- favorite end
 
+-- project library begin.
+CREATE TABLE file(
+    id int PRIMARY KEY auto_increment,
+    uuid varchar(64) CHARACTER SET binary NOT NULL,
+    name varchar(250) CHARACTER SET binary NOT NULL,
+    size_byte bigint NOT NULL,
+    creator varchar(250) CHARACTER SET binary NOT NULL,
+    version_count int NOT NULL DEFAULT 1,
+    folder int NOT NULL,
+    status boolean NOT NULL DEFAULT true,
+    created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    location varchar(250) CHARACTER SET binary,
+    delete_at BIGINT UNSIGNED NOT NULL default 0
+) CHARACTER SET utf8;
+
+CREATE INDEX i_file_folder ON file(folder);
+CREATE INDEX i_file_status ON file(status);
+
+CREATE TABLE folder(
+    id int PRIMARY KEY auto_increment,
+    type tinyint NOT NULL default 0,
+    name varchar(250) CHARACTER SET binary NOT NULL DEFAULT "",
+    creator varchar(250) CHARACTER SET binary NOT NULL DEFAULT "admin",
+    owner varchar(250) CHARACTER SET binary NOT NULL DEFAULT "admin",
+    parent int NOT NULL DEFAULT -1,
+    project int NOT NULL,
+    status boolean NOT NULL DEFAULT true,
+    created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    location varchar(250) CHARACTER SET binary,
+    delete_at BIGINT UNSIGNED NOT NULL default 0
+) CHARACTER SET utf8;
+
+CREATE INDEX i_folder_type ON folder(type);
+CREATE INDEX i_folder_parent ON folder(parent);
+CREATE INDEX i_folder_project ON folder(project);
+CREATE INDEX i_folder_status ON folder(status);
+
+CREATE TABLE share_users(
+    folder int NOT NULL,
+    userjid varchar(250) CHARACTER SET binary NOT NULL,
+    PRIMARY KEY (folder, userjid)
+) CHARACTER SET utf8;
+
+CREATE TABLE file_version(
+    id int PRIMARY KEY NOT NULL auto_increment,
+    file int NOT NULL,
+    uuid varchar(250) CHARACTER SET binary NOT NULL,
+    creator varchar(250) CHARACTER SET binary NOT NULL,
+    size_byte bigint NOT NULL,
+    created_at timestamp NOT NULL
+) CHARACTER SET utf8;
+
+CREATE INDEX i_file_version_file ON file_version(file);
+
+CREATE TABLE file_log(
+    id int PRIMARY KEY NOT NULL auto_increment,
+    userjid varchar(250) CHARACTER SET binary NOT NULL,
+    operation tinyint NOT NULL DEFAULT 0,
+    text varchar(250) CHARACTER SET binary NOT NULL,
+    path varchar(250) CHARACTER SET binary,
+    project int NOT NULL,
+    created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) CHARACTER SET utf8;
+
+CREATE INDEX i_file_log_project ON file_log(project);
+-- project library end.
