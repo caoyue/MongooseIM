@@ -414,47 +414,6 @@ CREATE TABLE project_link (
 
 -- organization end
 
--- file library begin
-CREATE TABLE library_folder (
-    id int PRIMARY KEY NOT NULL auto_increment,
-    name varchar(250) CHARACTER SET binary NOT NULL,
-    description varchar(250) CHARACTER SET binary,
-    project int NOT NULL,
-    parent int,
-    created_by varchar(250) CHARACTER SET binary NOT NULL,
-    created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
-) CHARACTER SET utf8;
-
-CREATE TABLE library_permission (
-    id int PRIMARY KEY NOT NULL auto_increment,
-    folder int NOT NULL,
-    organization int NOT NULL,
-    created_by varchar(250) CHARACTER SET binary NOT NULL,
-    created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
-) CHARACTER SET utf8;
-
-CREATE TABLE library_file (
-    id int PRIMARY KEY NOT NULL auto_increment,
-    uid varchar(64) CHARACTER SET binary NOT NULL,
-    folder int NOT NULL,
-    name varchar(250) CHARACTER SET binary NOT NULL,
-    version int NOT NULL default 1,
-    uploaded_by varchar(250) CHARACTER SET binary NOT NULL,
-    uploaded_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
-) CHARACTER SET utf8;
-
-CREATE TABLE library_file_version(
-    id int PRIMARY KEY NOT NULL auto_increment,
-    file int NOT NULL,
-    folder int NOT NULL,
-    uid varchar(64) CHARACTER SET binary NOT NULL,
-    name varchar(250) CHARACTER SET binary NOT NULL,
-    version int NOT NULL default 1,
-    uploaded_by varchar(250) CHARACTER SET binary NOT NULL,
-    uploaded_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
-) CHARACTER SET utf8;
--- file library end
-
 -- favorite begin
 CREATE TABLE favorite_change(
     jid varchar(250) PRIMARY KEY,
