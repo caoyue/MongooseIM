@@ -453,7 +453,7 @@ CREATE TABLE file(
     status boolean NOT NULL DEFAULT true,
     created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     location varchar(250) CHARACTER SET binary,
-    delete_at BIGINT UNSIGNED NOT NULL default 0
+    deleted_at BIGINT UNSIGNED NOT NULL default 0
 ) CHARACTER SET utf8;
 
 CREATE INDEX i_file_folder ON file(folder);
@@ -470,7 +470,7 @@ CREATE TABLE folder(
     status boolean NOT NULL DEFAULT true,
     created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     location varchar(250) CHARACTER SET binary,
-    delete_at BIGINT UNSIGNED NOT NULL default 0
+    deleted_at BIGINT UNSIGNED NOT NULL default 0
 ) CHARACTER SET utf8;
 
 CREATE INDEX i_folder_type ON folder(type);
@@ -495,7 +495,7 @@ CREATE TABLE file_version(
 
 CREATE INDEX i_file_version_file ON file_version(file);
 
-CREATE TABLE file_log(
+CREATE TABLE library_log(
     id int PRIMARY KEY NOT NULL auto_increment,
     userjid varchar(250) CHARACTER SET binary NOT NULL,
     operation tinyint NOT NULL DEFAULT 0,
@@ -505,5 +505,5 @@ CREATE TABLE file_log(
     created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) CHARACTER SET utf8;
 
-CREATE INDEX i_file_log_project ON file_log(project);
+CREATE INDEX i_file_log_project ON library_log(project);
 -- project library end.

@@ -77,7 +77,7 @@ process_iq(_, _, IQ) ->
 %% higher function. called by process_iq.
 %% ------------------------------------------------------------------
 
-get_project(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = get, sub_el = SubEl} = IQ, Who) ->
+get_project(From, _To, #iq{type = get, sub_el = SubEl} = IQ, Who) ->
     #jid{user = U, server = S} = From,
     BaseJID = <<U/binary, "@", S/binary>>,
     {struct, Data} = mochijson2:decode(xml:get_tag_cdata(SubEl)),
@@ -101,7 +101,7 @@ get_project(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = get, sub_el = SubEl} 
 get_project(_, _, IQ, _) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
 
-get_structure(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = get, sub_el = SubEl} = IQ) ->
+get_structure(From, _To, #iq{type = get, sub_el = SubEl} = IQ) ->
     #jid{user = U, server = S} = From,
     BaseJID = <<U/binary, "@", S/binary>>,
     {struct, Data} = mochijson2:decode(xml:get_tag_cdata(SubEl)),
@@ -122,7 +122,7 @@ get_structure(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = get, sub_el = SubEl
 get_structure(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
 
-create(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl} = IQ) ->
+create(From, _To, #iq{type = set, sub_el = SubEl} = IQ) ->
     #jid{user = U, server = S} = From,
     BaseJID = <<U/binary, "@", S/binary>>,
     {struct, Data} = mochijson2:decode(xml:get_tag_cdata(SubEl)),
@@ -141,7 +141,7 @@ create(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl} = IQ)
 create(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
 
-finish(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl} = IQ) ->
+finish(From, _To, #iq{type = set, sub_el = SubEl} = IQ) ->
     #jid{user = U, server = S} = From,
     BaseJID = <<U/binary, "@", S/binary>>,
     {struct, Data} = mochijson2:decode(xml:get_tag_cdata(SubEl)),
@@ -165,7 +165,7 @@ finish(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl} = IQ)
 finish(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
 
-set_photo(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl} = IQ) ->
+set_photo(From, _To, #iq{type = set, sub_el = SubEl} = IQ) ->
     #jid{user = U, server = S} = From,
     BaseJID = <<U/binary, "@", S/binary>>,
     {struct, Data} = mochijson2:decode(xml:get_tag_cdata(SubEl)),
@@ -185,8 +185,7 @@ set_photo(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl} = 
 set_photo(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
 
-
-get_photo(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = get, sub_el = SubEl} = IQ) ->
+get_photo(From, _To, #iq{type = get, sub_el = SubEl} = IQ) ->
     #jid{user = _U, server = S} = From,
     {struct, Data} = mochijson2:decode(xml:get_tag_cdata(SubEl)),
     {_, ProID} = lists:keyfind(<<"project">>, 1, Data),
@@ -202,10 +201,7 @@ get_photo(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = get, sub_el = SubEl} = 
 get_photo(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
 
-
-
-
-list_project(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = get, sub_el = SubEl} = IQ, Type) ->
+list_project(From, _To, #iq{type = get, sub_el = SubEl} = IQ, Type) ->
     #jid{user = U, server = S} = From,
     BaseJID = <<U/binary, "@", S/binary>>,
 
@@ -221,7 +217,7 @@ list_project(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = get, sub_el = SubEl}
 list_project(_, _, IQ, _Type) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
 
-list_children_jobs(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = get, sub_el = SubEl} = IQ) ->
+list_children_jobs(From, _To, #iq{type = get, sub_el = SubEl} = IQ) ->
     #jid{user = U, server = S} = From,
     BaseJID = <<U/binary, "@", S/binary>>,
     {struct, Data} = mochijson2:decode(xml:get_tag_cdata(SubEl)),
@@ -237,7 +233,7 @@ list_children_jobs(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = get, sub_el = 
 list_children_jobs(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
 
-add_job(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl} = IQ) ->
+add_job(From, _To, #iq{type = set, sub_el = SubEl} = IQ) ->
     #jid{user = U, server = S} = From,
     BaseJID = <<U/binary, "@", S/binary>>,
     {struct, Data} = mochijson2:decode(xml:get_tag_cdata(SubEl)),
@@ -260,7 +256,7 @@ add_job(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl} = IQ
 add_job(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
 
-add_member(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl} = IQ) ->
+add_member(From, _To, #iq{type = set, sub_el = SubEl} = IQ) ->
     #jid{user = U, server = S} = From,
     BaseJID = <<U/binary, "@", S/binary>>,
     {struct, Data} = mochijson2:decode(xml:get_tag_cdata(SubEl)),
@@ -290,7 +286,7 @@ add_member(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl} =
 add_member(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
 
-delete_member(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl} = IQ) ->
+delete_member(From, _To, #iq{type = set, sub_el = SubEl} = IQ) ->
     #jid{user = U, server = S} = From,
     BaseJID = <<U/binary, "@", S/binary>>,
     {struct, Data} = mochijson2:decode(xml:get_tag_cdata(SubEl)),
@@ -305,6 +301,7 @@ delete_member(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl
                     Result0 = [{JID} | Result], %% include delete member.
                     Content = <<"{\"project\":\"", ProID/binary,  "\", \"member_tag\":\"", MemberTag/binary,  "\", \"member\":[\"", JID/binary, "\"]}">>,
                     push_message(ProID, S, Result0, <<"delete_member">>, Content),
+                    ejabberd_hooks:run(delete_member, jlib:nameprep(S), [S, JID, ProID]),
                     IQ#iq{type = result};
                 _ ->
                     IQ#iq{type = error, sub_el = [SubEl, ?AFT_ERR_DATABASE]}
@@ -314,7 +311,7 @@ delete_member(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl
 delete_member(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
 
-list_member(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = get, sub_el = SubEl} = IQ) ->
+list_member(From, _To, #iq{type = get, sub_el = SubEl} = IQ) ->
     #jid{user = U, server = S} = From,
     BaseJID = <<U/binary, "@", S/binary>>,
     {struct, Data} = mochijson2:decode(xml:get_tag_cdata(SubEl)),
@@ -336,7 +333,7 @@ list_member(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = get, sub_el = SubEl} 
 list_member(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
 
-list_link_project(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = get, sub_el = SubEl} = IQ) ->
+list_link_project(From, _To, #iq{type = get, sub_el = SubEl} = IQ) ->
     #jid{user = U, server = S} = From,
     BaseJID = <<U/binary, "@", S/binary>>,
     {struct, Data} = mochijson2:decode(xml:get_tag_cdata(SubEl)),
@@ -353,7 +350,7 @@ list_link_project(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = get, sub_el = S
 list_link_project(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
 
-subscribe(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl} = IQ, Type) ->
+subscribe(From, _To, #iq{type = set, sub_el = SubEl} = IQ, Type) ->
     #jid{user = U, server = S} = From,
     BaseJID = <<U/binary, "@", S/binary>>,
     {struct, Data} = mochijson2:decode(xml:get_tag_cdata(SubEl)),
@@ -391,7 +388,7 @@ subscribe(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, type = set, sub_el = SubEl} = 
 subscribe(_, _, IQ, _) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
 
-search_project(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, sub_el = SubEl} = IQ) ->
+search_project(From, _To, #iq{sub_el = SubEl} = IQ) ->
     #jid{server = S} = From,
     {struct, Data} = mochijson2:decode(xml:get_tag_cdata(SubEl)),
     {_, Name} = lists:keyfind(<<"name">>, 1, Data),
@@ -408,7 +405,7 @@ search_project(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
 
 %% current not used.
-is_project_name_exist(From, _To, #iq{xmlns = ?NS_AFT_PROJECT, sub_el = SubEl} = IQ) ->
+is_project_name_exist(From, _To, #iq{sub_el = SubEl} = IQ) ->
     #jid{user = _U, server = S} = From,
     {struct, Data} = mochijson2:decode(xml:get_tag_cdata(SubEl)),
     {_, Name} = lists:keyfind(<<"name">>, 1, Data),
@@ -524,6 +521,7 @@ create_ex(LServer, ProjectName, BaseJID, Template, Job) ->
                         {ok, #project{id = Id, name = _Name, photo = Photo ,description = _Desc, job_tag = JobTag, start_at = StartTime},
                          #node{id = JobId, name=JobName, lft = Left, rgt = Right, department = Part}} ->
                             PhotoURL = list_to_binary(make_head_url(binary_to_list(Photo))),
+                            ejabberd_hooks:run(create_project, LServer, [LServer, Id]),
                             {ok, <<"{\"project\":{\"id\":\"", Id/binary, "\",\"name\":\"", ProjectName/binary,
                                     "\",\"photo\":\"", PhotoURL/binary, "\",\"job_tag\":\"", JobTag/binary,
                                     "\",\"member_tag\":\"", JobTag/binary, "\",\"link_tag\":\"", JobTag/binary,

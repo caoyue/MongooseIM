@@ -4,6 +4,8 @@
 
 -export([start/2, stop/1, process_iq/3]).
 
+-export([get_url/2]).
+
 -include("ejabberd.hrl").
 -include("jlib.hrl").
 -include("mod_mms.hrl").

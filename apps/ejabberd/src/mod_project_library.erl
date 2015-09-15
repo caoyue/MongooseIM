@@ -2,8 +2,10 @@
 
 -behaviour(gen_mod).
 
-%% iq exports
--export([start/2, stop/1, process_iq/3]).
+%% iq, hooks exports
+-export([start/2, stop/1, process_iq/3,
+    create_project/2, delete_member/3]).
+
 
 %% Internal exports
 -export([start_link/2]).
@@ -14,34 +16,44 @@
 
 -include("jlib.hrl").
 -include("ejabberd.hrl").
+-include("mod_mms.hrl").
 
--define(TYPE_ROOT, <<"-1">>).
--define(TYPE_0, <<"0">>).
--define(TYPE_1, <<"1">>).
--define(TYPE_2, <<"2">>).
--define(TYPE_3, <<"3">>).
--define(TYPE_4, <<"4">>).
--define(TYPE_5, <<"5">>).
+-define(TYPE_ROOT,          <<"-1">>).
+-define(TYPE_PUBLIC,        <<"0">>).  % public folder.
+-define(TYPE_PUB_SUB,       <<"1">>).  % public sub folder.
+-define(TYPE_PERSON,        <<"2">>).  % personal folder.
+-define(TYPE_PER_PUBLIC,    <<"3">>).  % personal sub public folder.
+-define(TYPE_PER_SHARE,     <<"4">>).  % personal sub share folder.
+-define(TYPE_PER_PRIVATE,   <<"5">>).  % personal private folder.
 
--define(LOG_OPERATION_0, <<"0">>). % add file.
--define(LOG_OPERATION_1, <<"1">>). % add folder.
--define(LOG_OPERATION_2, <<"2">>). % delete file.
--define(LOG_OPERATION_3, <<"3">>). % delete folder.
--define(LOG_OPERATION_4, <<"4">>). % move file.
--define(LOG_OPERATION_5, <<"5">>). % move folder.
--define(LOG_OPERATION_6, <<"6">>). % rename.
--define(LOG_OPERATION_7, <<"7">>). % add file version.
--define(LOG_OPERATION_8, <<"8">>). % recover file.
+-define(LOG_ADD_FILE,           <<"0">>).
+-define(LOG_ADD_FOLDER,         <<"1">>).
+-define(LOG_DELETE_FILE,        <<"2">>).
+-define(LOG_DELETE_FOLDER,      <<"3">>).
+-define(LOG_MOVE_FILE,          <<"4">>).
+-define(LOG_MOVE_FOLDER,        <<"5">>).
+-define(LOG_RENAME,             <<"6">>).
+-define(LOG_ADD_FILE_VERSION,   <<"7">>).
+-define(LOG_RECOVER_FILE,       <<"8">>).
 
 start(Host, _Opts) ->
+    start_worker(Host),
     gen_iq_handler:add_iq_handler(ejabberd_sm, Host,
         ?NS_AFT_LIBRARY, ?MODULE, process_iq, no_queue),
-    start_worker(Host).
+    ejabberd_hooks:add(create_project, Host,
+        ?MODULE, create_project, 50),
+    ejabberd_hooks:add(delete_member, Host,
+        ?MODULE, delete_member, 50),
+    ok.
 
 stop(Host) ->
+    ejabberd_hooks:delete(delete_member, Host,
+        ?MODULE, delete_member, 50),
+    ejabberd_hooks:delete(create_project, Host,
+        ?MODULE, create_project, 50),
     gen_iq_handler:remove_iq_handler(ejabberd_sm, Host, ?NS_AFT_LIBRARY),
-    stop_worker(Host).
-
+    stop_worker(Host),
+    ok.
 
 %% ------------------------------------------------------------------
 %% higher function. called by process_iq.
@@ -75,8 +87,8 @@ process_iq(From, To, #iq{xmlns = ?NS_AFT_LIBRARY, type = _Type, sub_el = SubEl} 
             list_share_users(From, To, IQ);
         <<"list_version">> ->
             list_version(From, To, IQ);
-        %%<<"download">> ->
-        %%    download(From, To, IQ);
+        <<"download">> ->
+            download(From, To, IQ);
         <<"get_log">> ->
             get_log(From, To, IQ);
         <<"get_trash">> ->
@@ -91,6 +103,23 @@ process_iq(From, To, #iq{xmlns = ?NS_AFT_LIBRARY, type = _Type, sub_el = SubEl} 
 process_iq(_, _, IQ) ->
     #iq{sub_el = SubEl} = IQ,
     IQ#iq{type = error, sub_el = [SubEl, ?ERR_BAD_REQUEST]}.
+
+
+%% ------------------------------------------------------------------
+%% hooks
+%% ------------------------------------------------------------------
+
+create_project(LSever, Project) ->
+    case ejabberd_odbc:sql_query(LSever, ["insert into folder(type, name, creator, owner, parent, project, status ",
+        " select type, name, creator, owner, parent, ", Project, ", status from folder where project='-1';"]) of
+        {updated, 3} -> %% three ?TYPE_PUBLIC folder in project.
+            ok;
+        _ ->
+            ?ERROR_MSG("[ERROR]:Create Public folder failed for project ~p", [Project])
+    end.
+
+delete_member(LServer, BareJID, Project) ->
+    clear_trash_ex(LServer, BareJID, Project).
 
 
 %% ------------------------------------------------------------------
@@ -271,6 +300,25 @@ list_version(From, _To, #iq{type = get, sub_el = SubEl} = IQ) ->
 list_version(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
 
+download(From, _To, #iq{type = get, sub_el = SubEl} = IQ) ->
+    #jid{user = U, server = S} = From,
+    BareJID = <<U/binary, "@", S/binary>>,
+    Project = xml:get_tag_attr_s(<<"project">>, SubEl),
+    {struct, Data} = mochijson2:decode(xml:get_tag_cdata(SubEl)),
+    {_, ID} = lists:keyfind(<<"id">>, 1, Data),
+    {_, UUID} = lists:keyfind(<<"uuid">>, 1, Data),
+
+    case download_ex(S, BareJID, ID, UUID, Project) of
+        {error, Error} ->
+            IQ#iq{type = error, sub_el = [SubEl, Error]};
+        {ok, Result} ->
+            IQ#iq{type = result,
+                sub_el = [SubEl#xmlel{children = [{xmlcdata, Result}]}]}
+    end;
+download(_, _, IQ) ->
+    IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
+
+
 get_log(From, _To, #iq{type = get, sub_el = SubEl} = IQ) ->
     #jid{user = U, server = S} = From,
     BareJID = <<U/binary, "@", S/binary>>,
@@ -345,6 +393,7 @@ clear_trash(From, _To, #iq{type = set, sub_el = SubEl} = IQ) ->
         {error, Error} ->
             IQ#iq{type = error, sub_el = [SubEl, Error]};
         ok ->
+            %% TOFIX: delete file uuid in mms_file table.
             IQ#iq{type = result}
     end;
 clear_trash(_, _, IQ) ->
@@ -437,8 +486,8 @@ add_folder_ex(LServer, BareJID, Parent, Name, Project) ->
                             case ejabberd_odbc:sql_transaction(LServer, F) of
                                 {atomic, {ok, InsertFolder}} ->
                                     if
-                                        ParentType =:= ?TYPE_0 ->
-                                            store_log(LServer, BareJID, ?LOG_OPERATION_1, <<ParentName/binary, ">", Name/binary>>, "",  Project);
+                                        ParentType =:= ?TYPE_PUBLIC ->
+                                            store_log(LServer, BareJID, ?LOG_ADD_FOLDER, <<ParentName/binary, ">", Name/binary>>, "",  Project);
                                         true ->
                                             nothing_to_do
                                     end,
@@ -455,10 +504,10 @@ add_folder_ex(LServer, BareJID, Parent, Name, Project) ->
                         <<>> -> %% %% mean create folder in self, privilige is ok.
                             F = fun() ->
                                 {updated, 1} = ejabberd_odbc:sql_query_t(["insert into folder(type, name, creator, owner, parent, project) values('",
-                                    ?TYPE_2, "', '', '", SBareJID, "', '", SBareJID, "', '-1', '", Project, "');"]),
+                                    ?TYPE_PERSON, "', '', '", SBareJID, "', '", SBareJID, "', '-1', '", Project, "');"]),
                                 {selected, _, [{ID1}]} = ejabberd_odbc:sql_query_t(["select last_insert_id();"]),
                                 {updated, 1} = ejabberd_odbc:sql_query_t(["insert into folder(type, name, creator, owner, parent, project) values('",
-                                    ?TYPE_3, "', '", escape(Name), "', '", SBareJID, "', '", SBareJID, "', '", ID1, "', '", Project, "');"]),
+                                    ?TYPE_PER_PUBLIC, "', '", escape(Name), "', '", SBareJID, "', '", SBareJID, "', '", ID1, "', '", Project, "');"]),
                                 {selected, _, InsertFolder} = ejabberd_odbc:sql_query_t([query_folder_column(normal), "and id=last_insert_id();"]),
                                 {ok, ID1, InsertFolder}
                             end,
@@ -480,57 +529,61 @@ add_folder_ex(LServer, BareJID, Parent, Name, Project) ->
 add_file_ex(LServer, BareJID, Parent, Name, UUID, Size, Project) ->
     case odbc_organization:is_memeber(LServer, Project, BareJID) of
         {ok, true} ->
-            SBareJID = escape(BareJID),
-            case query_folder_info('id-name-type-owner', LServer, ["and project='", Project, "' and id='", Parent, "';"]) of
-                [{ParentID, ParentName, ParentType, ParentOwner}] ->
-                    case create_file_privilige(LServer, BareJID, ParentID, ParentType, ParentOwner, Project) of
-                        allowed ->
-                            F = fun() ->
-                                {updated, 1} = ejabberd_odbc:sql_query_t(["insert into file(uuid, name, size_byte, creator, version_count, folder) values('",
-                                    escape(UUID), "', '", escape(Name), "', '", Size, "', '", SBareJID, "', '1', '", ParentID, "');"]),
-                                {selected, _, InsertFile} = ejabberd_odbc:sql_query_t([query_file_column(normal), "and id=last_insert_id();"]),
-                                {ok, InsertFile}
-                            end,
-                            case ejabberd_odbc:sql_transaction(LServer, F) of
-                                {atomic, {ok, InsertFile}} ->
-                                    if
-                                        ParentType =:= ?TYPE_0 ->
-                                            store_log(LServer, BareJID, ?LOG_OPERATION_0, Name, <<ParentName/binary, ">">>,  Project);
-                                        ParentType =:= ?TYPE_1 ->
-                                            [{PPName}] = query_parent_info(name, LServer, ParentID, <<"folder">>),
-                                            store_log(LServer, BareJID, ?LOG_OPERATION_0, Name, <<PPName/binary, ">", ParentName/binary, ">" >>,  Project);
-                                        true ->
-                                            nothing_to_do
+            case check_add_file_uuid_valid(LServer, UUID) of
+                invalid -> {error, ?AFT_ERR_INVALID_FILE_ID};
+                valid ->
+                    SBareJID = escape(BareJID),
+                    case query_folder_info('id-name-type-owner', LServer, ["and project='", Project, "' and id='", Parent, "';"]) of
+                        [{ParentID, ParentName, ParentType, ParentOwner}] ->
+                            case create_file_privilige(LServer, BareJID, ParentID, ParentType, ParentOwner, Project) of
+                                allowed ->
+                                    F = fun() ->
+                                        {updated, 1} = ejabberd_odbc:sql_query_t(["insert into file(uuid, name, size_byte, creator, version_count, folder) values('",
+                                            escape(UUID), "', '", escape(Name), "', '", Size, "', '", SBareJID, "', '1', '", ParentID, "');"]),
+                                        {selected, _, InsertFile} = ejabberd_odbc:sql_query_t([query_file_column(normal), "and id=last_insert_id();"]),
+                                        {ok, InsertFile}
                                     end,
-                                    FileJson = build_file_result(InsertFile),
-                                    {ok, <<"{\"parent\":\"", ParentID/binary, "\", \"file\":", FileJson/binary, "}">>};
-                                _ ->
-                                    {error, ?AFT_ERR_DATABASE}
+                                    case ejabberd_odbc:sql_transaction(LServer, F) of
+                                        {atomic, {ok, InsertFile}} ->
+                                            if
+                                                ParentType =:= ?TYPE_PUBLIC ->
+                                                    store_log(LServer, BareJID, ?LOG_ADD_FILE, Name, <<ParentName/binary, ">">>,  Project);
+                                                ParentType =:= ?TYPE_PUB_SUB ->
+                                                    [{PPName}] = query_parent_info(name, LServer, ParentID, <<"folder">>),
+                                                    store_log(LServer, BareJID, ?LOG_ADD_FILE, Name, <<PPName/binary, ">", ParentName/binary, ">" >>,  Project);
+                                                true ->
+                                                    nothing_to_do
+                                            end,
+                                            FileJson = build_file_result(InsertFile),
+                                            {ok, <<"{\"parent\":\"", ParentID/binary, "\", \"file\":", FileJson/binary, "}">>};
+                                        _ ->
+                                            {error, ?AFT_ERR_DATABASE}
+                                    end;
+                                not_allowed ->
+                                    {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
                             end;
-                        not_allowed ->
-                            {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
-                    end;
-                not_exist ->
-                    case Parent of
-                        <<>> -> %% %% mean create folder in self, privilige is ok.
-                            F = fun() ->
-                                {updated, 1} = ejabberd_odbc:sql_query_t( ["insert into folder(type, name, creator, owner, parent, project) values('",
-                                    ?TYPE_2, "', '', '", SBareJID, "', '", SBareJID, "', '-1', '", Project, "');"]),
-                                {selected, _, [{ID1}]} = ejabberd_odbc:sql_query_t(["select last_insert_id();"]),
-                                {updated, 1} = ejabberd_odbc:sql_query_t(["insert into file(uuid, name, size_byte, creator, version_count, folder) values('", ejabberd_odbc:escape(UUID), "', '",
-                                ejabberd_odbc:escape(Name), "', '", Size, "', '", ejabberd_odbc:escape(BareJID), "', '1', '", ID1, "');"]),
-                                {selected, _, InsertFile} = ejabberd_odbc:sql_query_t([query_file_column(normal), "and id=last_insert_id();"]),
-                                {ok, ID1, InsertFile}
-                            end,
-                            case ejabberd_odbc:sql_transaction(LServer, F) of
-                                {atomic, {ok, ParentID, InsertFile}} ->
-                                    FileJson = build_file_result(InsertFile),
-                                    {ok, <<"{\"parent\":\"", ParentID/binary, "\", \"file\":", FileJson/binary, "}">>};
+                        not_exist ->
+                            case Parent of
+                                <<>> -> %% %% mean create folder in self, privilige is ok.
+                                    F = fun() ->
+                                        {updated, 1} = ejabberd_odbc:sql_query_t( ["insert into folder(type, name, creator, owner, parent, project) values('",
+                                            ?TYPE_PERSON, "', '', '", SBareJID, "', '", SBareJID, "', '-1', '", Project, "');"]),
+                                        {selected, _, [{ID1}]} = ejabberd_odbc:sql_query_t(["select last_insert_id();"]),
+                                        {updated, 1} = ejabberd_odbc:sql_query_t(["insert into file(uuid, name, size_byte, creator, version_count, folder) values('", ejabberd_odbc:escape(UUID), "', '",
+                                            ejabberd_odbc:escape(Name), "', '", Size, "', '", ejabberd_odbc:escape(BareJID), "', '1', '", ID1, "');"]),
+                                        {selected, _, InsertFile} = ejabberd_odbc:sql_query_t([query_file_column(normal), "and id=last_insert_id();"]),
+                                        {ok, ID1, InsertFile}
+                                    end,
+                                    case ejabberd_odbc:sql_transaction(LServer, F) of
+                                        {atomic, {ok, ParentID, InsertFile}} ->
+                                            FileJson = build_file_result(InsertFile),
+                                            {ok, <<"{\"parent\":\"", ParentID/binary, "\", \"file\":", FileJson/binary, "}">>};
+                                        _ ->
+                                            {error, ?AFT_ERR_DATABASE}
+                                    end;
                                 _ ->
-                                    {error, ?AFT_ERR_DATABASE}
-                            end;
-                        _ ->
-                            {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
+                                    {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
+                            end
                     end
             end;
         _ ->
@@ -550,7 +603,7 @@ delete_folder_ex(LServer, BareJID, ID, Project) ->
                                 {updated, _} = ejabberd_odbc:sql_query_t(["update file set status='0', location='", escape(<<Location/binary, ">", SelfName/binary>>),
                                     "', deleted_at='", integer_to_binary(DeleteTime), "' where folder='", ID, "'"]),
                                 if
-                                    SelfType =:= ?TYPE_4 ->
+                                    SelfType =:= ?TYPE_PER_SHARE ->
                                         {updated, _} = ejabberd_odbc:sql_query_t(["delete from share_users where folder='", ID, "';"]);
                                     true ->
                                         nothing_to_do
@@ -567,8 +620,8 @@ delete_folder_ex(LServer, BareJID, ID, Project) ->
                             case ejabberd_odbc:sql_transaction(LServer, F) of
                                 {atomic, ok} ->
                                     if
-                                        ParentType =:= ?TYPE_0 ->
-                                            store_log(LServer, BareJID, ?LOG_OPERATION_3, <<ParentName/binary, ">", SelfName/binary>>, "",  Project);
+                                        ParentType =:= ?TYPE_PUBLIC ->
+                                            store_log(LServer, BareJID, ?LOG_DELETE_FOLDER, <<ParentName/binary, ">", SelfName/binary>>, "",  Project);
                                         true ->
                                             nothing_to_do
                                     end,
@@ -601,11 +654,11 @@ delete_file_ex(LServer, BareJID, ID, Project) ->
                                 "' , deleted_at='", integer_to_binary(DeleteTime), "' where id='", ID, "';"]) of
                                     {updated, 1} ->
                                         if
-                                            ParentType =:= ?TYPE_0 ->
-                                                store_log(LServer, BareJID, ?LOG_OPERATION_2, <<ParentName/binary, ">", SelfName/binary>>, "",  Project);
-                                            ParentType =:= ?TYPE_1 ->
+                                            ParentType =:= ?TYPE_PUBLIC ->
+                                                store_log(LServer, BareJID, ?LOG_DELETE_FILE, <<ParentName/binary, ">", SelfName/binary>>, "",  Project);
+                                            ParentType =:= ?TYPE_PUB_SUB ->
                                                 %%[{PPName}] = query_parent_info(name, LServer, ParentID, <<"folder">>),
-                                                store_log(LServer, BareJID, ?LOG_OPERATION_2, <<Location/binary, ">", SelfName/binary>>, "", Project);
+                                                store_log(LServer, BareJID, ?LOG_DELETE_FILE, <<Location/binary, ">", SelfName/binary>>, "", Project);
                                             true ->
                                                 nothing_to_do
                                         end,
@@ -641,12 +694,12 @@ rename_file_or_folder_ex(LServer, BareJID, ID, Name, Project, Type) ->
                             case ejabberd_odbc:sql_query(LServer, ["update ", Type ," set name='", escape(Name), "' where id='", ID, "';"]) of
                                 {updated, 1} ->
                                     if
-                                        ParentType =:= ?TYPE_0 ->
-                                            store_log(LServer, BareJID, ?LOG_OPERATION_6, <<ParentName/binary, ">", SelfName/binary>>,
+                                        ParentType =:= ?TYPE_PUBLIC ->
+                                            store_log(LServer, BareJID, ?LOG_RENAME, <<ParentName/binary, ">", SelfName/binary>>,
                                                 <<ParentName/binary, ">", Name/binary>>,  Project);
-                                        ParentType =:= ?TYPE_1 ->
+                                        ParentType =:= ?TYPE_PUB_SUB ->
                                             [{PPName}] = query_parent_info(name, LServer, ParentID, <<"folder">>),
-                                            store_log(LServer, BareJID, ?LOG_OPERATION_6, <<PPName/binary, ">", ParentName/binary, ">", SelfName/binary>>,
+                                            store_log(LServer, BareJID, ?LOG_RENAME, <<PPName/binary, ">", ParentName/binary, ">", SelfName/binary>>,
                                                 <<PPName/binary, ">", ParentName/binary, ">", Name/binary>>, Project);
                                         true ->
                                             nothing_to_do
@@ -673,11 +726,11 @@ share_ex(LServer, BareJID, ID, Users, Project) ->
                     case share_privilige(LServer, BareJID, ParentID, ParentType, ParentOwner, SelfType, Project) of
                         allowed ->
                             AfterType = case Users of
-                                            false -> ?TYPE_5;
+                                            false -> ?TYPE_PER_PRIVATE;
                                             _ ->
                                                 if is_list(Users) ->
-                                                    if length(Users) > 0 -> ?TYPE_4;
-                                                        true -> ?TYPE_3
+                                                    if length(Users) > 0 -> ?TYPE_PER_SHARE;
+                                                        true -> ?TYPE_PER_PUBLIC
                                                     end;
                                                     true -> error
                                                 end
@@ -686,7 +739,7 @@ share_ex(LServer, BareJID, ID, Users, Project) ->
                                     error -> {error, ?ERR_BAD_REQUEST};
                                 _ ->
                                     Temp = if
-                                               AfterType =:= ?TYPE_4 ->
+                                               AfterType =:= ?TYPE_PER_SHARE ->
                                                    lists:foldl(fun(E_JID, AccIn) ->
                                                        AccIn1 = if
                                                                     AccIn =:= <<>> -> <<>>;
@@ -713,13 +766,13 @@ share_ex(LServer, BareJID, ID, Users, Project) ->
                                                 nothing_to_do
                                         end,
                                         if
-                                            (SelfType =:= ?TYPE_4) ->
+                                            (SelfType =:= ?TYPE_PER_SHARE) ->
                                                 {updated, _} = ejabberd_odbc:sql_query_t(["delete from share_users where folder='", ID, "';"]);
                                             true -> nothing_to_do
 
                                         end,
                                         if
-                                            (AfterType =:= ?TYPE_4) and (InsertQuery /= <<>>) ->
+                                            (AfterType =:= ?TYPE_PER_SHARE) and (InsertQuery /= <<>>) ->
                                                 {updated, _} =ejabberd_odbc:sql_query_t(InsertQuery),
                                                 ok;
                                             true ->
@@ -751,7 +804,7 @@ move_ex(LServer, BareJID, ID, DestFolder, Project, Type) ->
                 [{SelfName, ParentID, ParentName, ParentType, ParentOwner}] ->
             %case query_parent_info(id_name_type_owner, LServer, ID, Type) of
                 %[{ParentID, ParentName, ParentType, ParentOwner}] ->
-                    case query_folder_info(id-name-type-owner, LServer, ["and id='", DestFolder, "';"]) of
+                    case query_folder_info('id-name-type-owner', LServer, ["and id='", DestFolder, "';"]) of
                         [{DestID, DestName, DestType, DestOwner}] ->
                             case move_privilige(LServer, BareJID, ParentID, ParentType, ParentOwner, Type, 0, Project,
                                 DestFolder, DestType, DestOwner) of
@@ -764,29 +817,29 @@ move_ex(LServer, BareJID, ID, DestFolder, Project, Type) ->
                                         "' where id='", ID, "';"]) of
                                         {updated, 1} ->
                                             Text = if
-                                                       (ParentType =:= ?TYPE_0) ->
+                                                       (ParentType =:= ?TYPE_PUBLIC) ->
                                                            <<ParentName/binary, ">", SelfName/binary>>;
-                                                       (ParentType =:= ?TYPE_1) ->
+                                                       (ParentType =:= ?TYPE_PUB_SUB) ->
                                                            [{PPName1}] = query_parent_info(name, LServer, ParentID, <<"folder">>),
                                                            <<PPName1/binary, ">", ParentName/binary, ">", SelfName/binary>>;
-                                                       (ParentType =:= ?TYPE_2) or (ParentType =:= ?TYPE_3) or (ParentType =:= ?TYPE_4) or (ParentType =:= ?TYPE_5) ->
+                                                       (ParentType =:= ?TYPE_PERSON) or (ParentType =:= ?TYPE_PER_PUBLIC) or (ParentType =:= ?TYPE_PER_SHARE) or (ParentType =:= ?TYPE_PER_PRIVATE) ->
                                                            <<SelfName/binary>>;
                                                        true ->
                                                            false
                                                    end,
 
                                             Path = if
-                                                       (DestType =:= ?TYPE_0) ->
+                                                       (DestType =:= ?TYPE_PUBLIC) ->
                                                            <<DestName/binary, ">">>;
-                                                       (DestType =:= ?TYPE_1) ->
+                                                       (DestType =:= ?TYPE_PUB_SUB) ->
                                                            [{PPName2}] = query_parent_info(name, LServer, DestID, <<"folder">>),
                                                            <<PPName2/binary, ">", DestName/binary, ">">>;
                                                        true ->
                                                            false
                                                    end,
                                             Operation = if
-                                                            Type =:= <<"folder">> -> ?LOG_OPERATION_5;
-                                                            true -> ?LOG_OPERATION_4
+                                                            Type =:= <<"folder">> -> ?LOG_MOVE_FOLDER;
+                                                            true -> ?LOG_MOVE_FILE
                                                         end,
                                             if
                                                 (Text /= false) and (Path /= false) ->
@@ -814,30 +867,28 @@ move_ex(LServer, BareJID, ID, DestFolder, Project, Type) ->
 add_version_ex(LServer, BareJID, ID, UUID, Size, Project) ->
     case odbc_organization:is_memeber(LServer, Project, BareJID) of
         {ok, true} ->
-            case query_self_parent_info('id-name#id-type-name-owner', LServer, ID, <<"file">>) of
-                [{_SelfID, SelfName, ParentID, ParentType, ParentName, ParentOwner}] -> %% _SelfID, just only check file is exist or not, can check id is valied or not.
+            case query_self_parent_info('id-name-version_count#id-type-name-owner', LServer, ID, <<"file">>) of
+                [{_SelfID, SelfName, VersionCount, ParentID, ParentType, ParentName, ParentOwner}] -> %% _SelfID, just only check file is exist or not, can check id is valied or not.
                     case add_version_privilige(LServer, BareJID, ParentID, ParentType, ParentOwner, Project) of
                         allowed ->
                             F = fun() ->
-                                {selected, _, [{OldUUID, Name, OldSize, OldUpdater, OldVersionCount, OldTime}]} =
-                                    ejabberd_odbc:sql_query_t(["select uuid, name, size_byte, creator, version_count, created_at from file where id='", ID, "';"]),
-                                {updated, 1} = ejabberd_odbc:sql_query_t(["insert into file_version(file, uuid, size_byte, creator, created_at) values('",
-                                    ID, "', '", OldUUID, "', '", OldSize, "', '", escape(OldUpdater), "', '", OldTime, "');"]),
-                                NewVersionCount = integer_to_binary(binary_to_integer(OldVersionCount) + 1),
+                                {updated, 1} = ejabberd_odbc:sql_query_t(["insert into file_version(file, uuid, size_byte, creator, created_at) ",
+                                    " select id, uuid, size_byte, creator, created_at from file where id='", ID, "';"]),
+                                NewVersionCount = integer_to_binary(binary_to_integer(VersionCount) + 1),
                                 {selected, [<<"time">>], [{Time}]} = ejabberd_odbc:sql_query_t(["select current_timestamp() as time;"]),
                                 {updated, 1} = ejabberd_odbc:sql_query_t(["update file set uuid='", UUID, "', size_byte='", Size,  "', creator='", escape(BareJID),
                                             "', version_count='", NewVersionCount, "', created_at='", Time, "' where id='", ID, "';"]),
-                                {ok, [{ID, UUID, Name, Size, BareJID, NewVersionCount, ParentID, Time}]}
+                                {ok, [{ID, UUID, SelfName, Size, BareJID, NewVersionCount, ParentID, Time}]}
                             end,
                             case ejabberd_odbc:sql_transaction(LServer, F) of
                                 {atomic, {ok, FileInfo}} ->
                                     if
-                                        ParentType =:= ?TYPE_0 ->
-                                            store_log(LServer, BareJID, ?LOG_OPERATION_7, <<ParentName/binary, ">", SelfName/binary>>,
+                                        ParentType =:= ?TYPE_PUBLIC ->
+                                            store_log(LServer, BareJID, ?LOG_ADD_FILE_VERSION, <<ParentName/binary, ">", SelfName/binary>>,
                                                 "",  Project);
-                                        ParentType =:= ?TYPE_1 ->
+                                        ParentType =:= ?TYPE_PUB_SUB ->
                                             [{PPName}] = query_parent_info(name, LServer, ParentID, <<"folder">>),
-                                            store_log(LServer, BareJID, ?LOG_OPERATION_7, <<PPName/binary, ">", ParentName/binary, ">", SelfName/binary>>, "", Project);
+                                            store_log(LServer, BareJID, ?LOG_ADD_FILE_VERSION, <<PPName/binary, ">", ParentName/binary, ">", SelfName/binary>>, "", Project);
                                         true ->
                                             nothing_to_do
                                     end,
@@ -916,6 +967,57 @@ list_version_ex(LServer, BareJID, ID, Project) ->
             {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
     end.
 
+download_ex(LServer, BareJID, ID, UUID, Project) ->
+    case odbc_organization:is_memeber(LServer, Project, BareJID) of
+        {ok, true} ->
+            case query_self_parent_info('uuid-version_count#id-type-owner', LServer, ID, <<"file">>) of
+                {SelfUUID, Count, ParentID, ParentType, ParentOwner} ->
+                    Valid = if
+                                SelfUUID =:= UUID -> valid;
+                                (SelfUUID /= UUID) and (Count /= <<"1">>) ->
+                                    case ejabberd_odbc:sql_query(LServer, ["select uuid from file_version where file='", ID, "'"]) of
+                                        {selected, _, R} ->
+                                            case lists:keyfind(UUID, 1, R) of
+                                                false -> invalid;
+                                                _ -> valid
+                                            end;
+                                        _ -> invalid
+                                    end;
+                                true -> invalid
+                            end,
+                    if
+                        Valid =:= true ->
+                            case download_privilige(LServer, BareJID, ParentID, ParentType, ParentOwner) of
+                                allowed ->
+                                    case ejabberd_odbc:sql_query(LServer, ["select uid, owner, type from mms_file where id='", UUID, "';"]) of
+                                        {selected, _, [{FileUUID, _, FileType}]} ->
+                                            case FileType of
+                                                ?PROJECT ->
+                                                    case mod_mms:get_url(FileUUID, FileType) of
+                                                        error -> {error, ?AFT_ERR_LOGIC_SERVER};
+                                                        URL -> {ok, URL}
+                                                    end;
+                                                _ ->
+                                                    {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
+                                            end;
+                                        {selected, _, []} ->
+                                            {error, ?AFT_ERR_FILE_NOT_EXIST};
+                                        _ ->
+                                            {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
+                                    end;
+                                now_allowed ->
+                                    {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
+                            end;
+                        true ->
+                            {error, ?AFT_ERR_INVALID_FILE_ID}
+                    end;
+                _ ->
+                    {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
+            end;
+        _ ->
+            {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
+    end.
+
 get_log_ex(LServer, BareJID, Before, After, Count, Project) ->
     case odbc_organization:is_memeber(LServer, Project, BareJID) of
         {ok, true} ->
@@ -965,48 +1067,24 @@ get_trash_ex(LServer, BareJID, Before, After, Count, Project) ->
 clear_trash_ex(LServer, BareJID, Project) ->
     case odbc_organization:is_memeber(LServer, Project, BareJID) of
         {ok, true} ->
-            SelectFile = ["select file.id, file.version_count from file, folder ",
-                "where file.status='0' and file.folder=folder.id and ( folder.owner='", ejabberd_odbc:escape(BareJID), "' "],
+            DeleteVersionFile= ["delete file_version.* from file_version, file, folder",
+                "where file.status='0' and file.folder=folder.id and file_version.file=file.id and ( folder.owner='", escape(BareJID), "' "],
+            DeleteFile = ["delete file.* from file, folder ",
+                "where file.status='0' and file.folder=folder.id and ( folder.owner='", escape(BareJID), "' "],
             DeleteFolder = ["delete from folder where folder.status='0' and ( folder.owner='", ejabberd_odbc:escape(BareJID), "' "],
             AdminOrNot = case ejabberd_odbc:sql_query(LServer, ["select admin from project where id='", Project, "';"]) of
                              {selected, _, [{BareJID}]} -> " or folder.owner='admin');";
                              _ -> " );"
                          end,
-            {selected, _, R} = ejabberd_odbc:sql_query(LServer, [SelectFile, AdminOrNot]),
-            Len = length(R),
-            if
-                (Len > 0) ->
-                    {FileIDs, FileVersionIDs} =
-                        lists:foldl(fun({E1, E2}, {AccIn1, AccIn2}) ->
-                            AccOut1 = if
-                                          AccIn1 =:= <<>> -> <<>>;
-                                          true -> <<AccIn1/binary, ",">>
-                                      end,
-
-                            AccOut2 = if
-                                          E2 /= <<"1">> ->
-                                              if
-                                                  AccIn2 =:= <<>> -> <<E1/binary>>;
-                                                  true -> <<AccIn2/binary, ",", E1/binary>>
-                                              end;
-                                          true ->
-                                              AccIn2
-                                      end,
-                            {<<AccOut1/binary, E1/binary>>, AccOut2}
-                        end,
-                            {<<>>, <<>>},
-                            R),
-                    F = fun() ->
-                        ejabberd_odbc:sql_query_t(["delete from file where id in(", FileIDs, ")"]),
-                        ejabberd_odbc:sql_query_t(["delete from file_version where file in(", FileVersionIDs, ")"]),
-                        ejabberd_odbc:sql_query_t([DeleteFolder, AdminOrNot]),
-                        ok
-                    end,
-                    case ejabberd_odbc:sql_transaction(LServer, F) of
-                        {atomic, ok} -> ok;
-                        _ -> {error, ?AFT_ERR_DATABASE}
-                    end;
-                true -> {error, ?AFT_ERR_FILE_NOT_EXIST}
+            F = fun() ->
+                ejabberd_odbc:sql_query_t(DeleteVersionFile, AdminOrNot),
+                ejabberd_odbc:sql_query_t(DeleteFile, AdminOrNot),
+                ejabberd_odbc:sql_query_t([DeleteFolder, AdminOrNot]),
+                ok
+            end,
+            case ejabberd_odbc:sql_transaction(LServer, F) of
+                {atomic, ok} -> ok;
+                _ -> {error, ?AFT_ERR_DATABASE}
             end;
         _ ->
             {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
@@ -1035,11 +1113,11 @@ recover_file_ex(LServer, BareJID, ID, Name, DestFolder, Project) ->
                                     case ejabberd_odbc:sql_transaction(LServer, F) of
                                         {atomic, ok} ->
                                             if
-                                                (DestType =:= ?TYPE_0) ->
-                                                    store_log(LServer, BareJID, ?LOG_OPERATION_8, Name, <<ParentName/binary, ">", Name/binary>>, Project);
-                                                (DestFolder =:= ?TYPE_1) ->
+                                                (DestType =:= ?TYPE_PUBLIC) ->
+                                                    store_log(LServer, BareJID, ?LOG_RECOVER_FILE, Name, <<ParentName/binary, ">", Name/binary>>, Project);
+                                                (DestFolder =:= ?TYPE_PUB_SUB) ->
                                                     [{PPName}] = query_parent_info(name, LServer, ParentID, <<"folder">>),
-                                                    store_log(LServer, BareJID, ?LOG_OPERATION_8, Name, <<PPName/binary, ">", ParentName/binary, ">", Name/binary>>, Project);
+                                                    store_log(LServer, BareJID, ?LOG_RECOVER_FILE, Name, <<PPName/binary, ">", ParentName/binary, ">", Name/binary>>, Project);
                                                 true ->
                                                     nothing_to_do
                                             end,
@@ -1085,9 +1163,9 @@ recover_file_privilige(LServer, BareJID, _Folder, _Type, Owner, Project, _DestFo
 
 list_version_privilige(LServer, BareJID, ParentFolder, ParentType, ParentOwner, _SelfID, _SelfType, _Project) ->
     if
-        (ParentType =:= ?TYPE_0) or (ParentType =:= ?TYPE_1) or (ParentType =:= ?TYPE_2) or (ParentType =:= ?TYPE_3)->
+        (ParentType =:= ?TYPE_PUBLIC) or (ParentType =:= ?TYPE_PUB_SUB) or (ParentType =:= ?TYPE_PERSON) or (ParentType =:= ?TYPE_PER_PUBLIC)->
             allowed;
-        (ParentType =:= ?TYPE_4) ->
+        (ParentType =:= ?TYPE_PER_SHARE) ->
             case ejabberd_odbc:sql_query(LServer, ["select count(folder) from share_users where folder='", ParentFolder, "' and userjid='", BareJID, "';"]) of
                 {selected, _, [{<<"1">>}]} ->
                     allowed;
@@ -1097,7 +1175,7 @@ list_version_privilige(LServer, BareJID, ParentFolder, ParentType, ParentOwner, 
                         true -> not_allowed
                     end
             end;
-        (ParentType =:= ?TYPE_5) ->
+        (ParentType =:= ?TYPE_PER_PRIVATE) ->
             if
                 BareJID =:= ParentOwner -> allowed;
                 true -> not_allowed
@@ -1106,7 +1184,7 @@ list_version_privilige(LServer, BareJID, ParentFolder, ParentType, ParentOwner, 
 
 list_share_users_privilige(LServer, BareJID, _Folder, _Type, _Owner, SelfID, SelfType, SelfOwner, _Project) ->
     if
-        (SelfType =:= ?TYPE_4) ->
+        (SelfType =:= ?TYPE_PER_SHARE) ->
             %% ------------------- shoud check???
             case ejabberd_odbc:sql_query(LServer, ["select count(folder) from share_users where folder='", SelfID, "' and userjid='", BareJID, "';"]) of
                 {selected, _, [{<<"1">>}]} ->
@@ -1121,12 +1199,35 @@ list_share_users_privilige(LServer, BareJID, _Folder, _Type, _Owner, SelfID, Sel
        true -> not_allowed
     end.
 
+download_privilige(LServer, BareJID, ParentID, ParentType, ParentOwner) ->
+    if
+        (ParentType =:= ?TYPE_PUBLIC) or (ParentType =:= ?TYPE_PUB_SUB) or (ParentType =:= ?TYPE_PERSON) or (ParentType =:= ?TYPE_PER_PUBLIC) ->
+            allowed;
+        ?TYPE_PER_SHARE ->
+            if
+                BareJID =:= ParentOwner -> allowed;
+                true ->
+                    case ejabberd_odbc:sql_query(LServer, ["select id from share_users where folder='", ParentID,
+                        "' and userjid='", escape(BareJID), "';"]) of
+                        {selected, _, [{_ID}]} -> allowed;
+                        _ -> not_allowed
+                    end
+            end;
+        ?TYPE_PER_PRIVATE ->
+            if
+                BareJID =:= ParentOwner -> allowed;
+                true -> not_allowed
+            end;
+        true ->
+            not_allowed
+    end.
+
 add_version_privilige(_LServer, BareJID, _Folder, Type, Owner, _Project) ->
     if
-        (Type =:= ?TYPE_0) or (Type =:= ?TYPE_1) ->
+        (Type =:= ?TYPE_PUBLIC) or (Type =:= ?TYPE_PUB_SUB) ->
             allowed;
-        (Type =:= ?TYPE_2) or (Type =:= ?TYPE_3) or
-            (Type =:= ?TYPE_4) or (Type =:= ?TYPE_5) ->
+        (Type =:= ?TYPE_PERSON) or (Type =:= ?TYPE_PER_PUBLIC) or
+            (Type =:= ?TYPE_PER_SHARE) or (Type =:= ?TYPE_PER_PRIVATE) ->
             if
                 (BareJID =:= Owner) -> allowed;
                 true -> not_allowed
@@ -1141,11 +1242,11 @@ move_privilige(LServer, BareJID, Folder, Type, Owner,
             if
                 (SelfType2 =:= <<"folder">>) ->
                     if
-                        Type =:= ?TYPE_0 ->
+                        Type =:= ?TYPE_PUBLIC ->
                             case ejabberd_odbc:sql_query(LServer, ["select admin from project where id='", Project, "';"]) of
                                 {selected, _, [{BareJID}]} ->
                                     if
-                                        (DestType =:= ?TYPE_0) -> allowed;
+                                        (DestType =:= ?TYPE_PUBLIC) -> allowed;
                                         true -> not_allowed
                                     end;
                                 _ ->
@@ -1155,12 +1256,12 @@ move_privilige(LServer, BareJID, Folder, Type, Owner,
                     end;
                true ->
                     if
-                        (Type =:= ?TYPE_0) or (Type =:= ?TYPE_1) ->
+                        (Type =:= ?TYPE_PUBLIC) or (Type =:= ?TYPE_PUB_SUB) ->
                             case ejabberd_odbc:sql_query(LServer, ["select admin from project where id='", Project, "';"]) of
                                 {selected, _, [{BareJID}]} ->
                                     %% admin move file from public folder to his personal folder is not allowed.
                                     if
-                                        (DestType =:= ?TYPE_0) or (DestType =:= ?TYPE_1) -> allowed;
+                                        (DestType =:= ?TYPE_PUBLIC) or (DestType =:= ?TYPE_PUB_SUB) -> allowed;
                                         true -> not_allowed
                                     end;
                                 _ ->
@@ -1170,7 +1271,7 @@ move_privilige(LServer, BareJID, Folder, Type, Owner,
                            if
                                (BareJID =:= Owner) ->
                                    if
-                                       (DestType =:= ?TYPE_0) or (DestType =:= ?TYPE_1) ->
+                                       (DestType =:= ?TYPE_PUBLIC) or (DestType =:= ?TYPE_PUB_SUB) ->
                                            allowed;
                                        (BareJID =:= DestOwner) ->
                                            allowed;
@@ -1185,7 +1286,7 @@ move_privilige(LServer, BareJID, Folder, Type, Owner,
 
 share_privilige(_LServer, BareJID, _Folder, ParentType, ParentOwner, SelfType, _Project) ->
     if
-        (ParentType =:= ?TYPE_2) and ( (SelfType =:= ?TYPE_3) or (SelfType =:= ?TYPE_4) or (SelfType =:= ?TYPE_5) ) ->
+        (ParentType =:= ?TYPE_PERSON) and ( (SelfType =:= ?TYPE_PER_PUBLIC) or (SelfType =:= ?TYPE_PER_SHARE) or (SelfType =:= ?TYPE_PER_PRIVATE) ) ->
             if
                 BareJID =:= ParentOwner -> allowed;
                 true -> not_allowed
@@ -1196,7 +1297,7 @@ share_privilige(_LServer, BareJID, _Folder, ParentType, ParentOwner, SelfType, _
 
 rename_folder_privilige(LServer, BareJID, _Folder, Type, Owner, SelfUpdater, Project) ->
     case Type of
-        ?TYPE_0 ->
+        ?TYPE_PUBLIC ->
             case ejabberd_odbc:sql_query(LServer, ["select admin from project where id='", Project, "';"]) of
                 {selected, _, [{BareJID}]} ->
                     allowed;
@@ -1206,7 +1307,7 @@ rename_folder_privilige(LServer, BareJID, _Folder, Type, Owner, SelfUpdater, Pro
                         true -> not_allowed
                     end
             end;
-        ?TYPE_2 ->
+        ?TYPE_PERSON ->
             if
                 BareJID =:= Owner -> allowed;
                 true -> not_allowed
@@ -1217,7 +1318,7 @@ rename_folder_privilige(LServer, BareJID, _Folder, Type, Owner, SelfUpdater, Pro
 
 rename_file_privilige(LServer, BareJID, _Folder, Type, Owner, SelfUpdater, Project) ->
     if
-        (Type =:= ?TYPE_0) or (Type =:= ?TYPE_1) ->
+        (Type =:= ?TYPE_PUBLIC) or (Type =:= ?TYPE_PUB_SUB) ->
             case ejabberd_odbc:sql_query(LServer, ["select admin from project where id='", Project, "';"]) of
                 {selected, _, [{BareJID}]} ->
                     allowed;
@@ -1227,7 +1328,7 @@ rename_file_privilige(LServer, BareJID, _Folder, Type, Owner, SelfUpdater, Proje
                         true -> not_allowed
                     end
             end;
-        (Type =:= ?TYPE_2) or (Type =:= ?TYPE_3) or (Type =:= ?TYPE_4) or (Type =:= ?TYPE_5) ->
+        (Type =:= ?TYPE_PERSON) or (Type =:= ?TYPE_PER_PUBLIC) or (Type =:= ?TYPE_PER_SHARE) or (Type =:= ?TYPE_PER_PRIVATE) ->
             if
                 BareJID =:= Owner -> allowed;
                 true -> not_allowed
@@ -1238,14 +1339,14 @@ rename_file_privilige(LServer, BareJID, _Folder, Type, Owner, SelfUpdater, Proje
 
 delete_folder_privilige(LServer, BareJID, _Folder, Type, Owner, Project) ->
     case Type of
-        ?TYPE_0 ->
+        ?TYPE_PUBLIC ->
             case ejabberd_odbc:sql_query(LServer, ["select admin from project where id='", Project, "';"]) of
                 {selected, _, [{BareJID}]} ->
                     allowed;
                 _ ->
                     not_allowed
             end;
-        ?TYPE_2 ->
+        ?TYPE_PERSON ->
             if
                 BareJID =:= Owner -> allowed;
                 true -> not_allowed
@@ -1256,14 +1357,14 @@ delete_folder_privilige(LServer, BareJID, _Folder, Type, Owner, Project) ->
 
 delete_file_privilige(LServer, BareJID, _Folder, Type, Owner, Project) ->
     if
-        (Type =:= ?TYPE_0) or (Type =:= ?TYPE_1) ->
+        (Type =:= ?TYPE_PUBLIC) or (Type =:= ?TYPE_PUB_SUB) ->
             case ejabberd_odbc:sql_query(LServer, ["select admin from project where id='", Project, "';"]) of
                 {selected, _, [{BareJID}]} ->
                     allowed;
                 _ ->
                     not_allowed
             end;
-        (Type =:= ?TYPE_2) or (Type =:= ?TYPE_3) or (Type =:= ?TYPE_4) or (Type =:= ?TYPE_5) ->
+        (Type =:= ?TYPE_PERSON) or (Type =:= ?TYPE_PER_PUBLIC) or (Type =:= ?TYPE_PER_SHARE) or (Type =:= ?TYPE_PER_PRIVATE) ->
             if
                 BareJID =:= Owner ->
                     allowed;
@@ -1276,12 +1377,12 @@ delete_file_privilige(LServer, BareJID, _Folder, Type, Owner, Project) ->
 
 create_folder_privilige(_LServer, BareJID, _Folder, Type, Owner, _Project) ->
     case Type of
-        ?TYPE_0 ->
-            {allowed, ?TYPE_1};
-        ?TYPE_2 ->
+        ?TYPE_PUBLIC ->
+            {allowed, ?TYPE_PUB_SUB};
+        ?TYPE_PERSON ->
             if
                 BareJID =:= Owner ->
-                    {allowed, ?TYPE_3};
+                    {allowed, ?TYPE_PER_PUBLIC};
                 true ->
                     not_allowed
             end;
@@ -1291,9 +1392,9 @@ create_folder_privilige(_LServer, BareJID, _Folder, Type, Owner, _Project) ->
 
 create_file_privilige(LServer, BareJID, Folder, Type, Owner, _Project) ->
     if
-        (Type =:= ?TYPE_0) or (Type =:= ?TYPE_1) or (Type =:= ?TYPE_2) or (Type =:= ?TYPE_3) ->
+        (Type =:= ?TYPE_PUBLIC) or (Type =:= ?TYPE_PUB_SUB) or (Type =:= ?TYPE_PERSON) or (Type =:= ?TYPE_PER_PUBLIC) ->
             allowed;
-        (Type =:= ?TYPE_4) ->
+        (Type =:= ?TYPE_PER_SHARE) ->
             if
                 BareJID =:= Owner ->
                     allowed;
@@ -1306,7 +1407,7 @@ create_file_privilige(LServer, BareJID, Folder, Type, Owner, _Project) ->
                             not_allowed
                     end
             end;
-        (Type =:= ?TYPE_5)->
+        (Type =:= ?TYPE_PER_PRIVATE)->
             if
                 BareJID =:= Owner ->
                     allowed;
@@ -1326,36 +1427,40 @@ create_file_privilige(LServer, BareJID, Folder, Type, Owner, _Project) ->
 folder_sql_query(LServer, Type, BareJID, Folder, Project, IsOwner) ->
     case Type of
         ?TYPE_ROOT ->
-            Query = [query_folder_column(normal), "and parent ='-1' and (type='", ?TYPE_0, "' or type='", ?TYPE_2, "') and  project='", Project, "';"],
+            Query = [query_folder_column(normal), "and parent ='-1' and (type='", ?TYPE_PUBLIC, "' or type='", ?TYPE_PERSON, "') and  project='", Project, "';"],
             [{folder, Query}];
-        ?TYPE_0 ->
+        ?TYPE_PUBLIC ->
             Query = [query_folder_column(normal), "and parent='", Folder, "';"],
             [{file, query_file_by_parent(Folder)}, {folder, Query}];
-        ?TYPE_1 ->
+        ?TYPE_PUB_SUB ->
             [{file, query_file_by_parent(Folder)}];
-        ?TYPE_2 ->
-            if IsOwner =:= true ->
-                Query = [query_folder_column(normal), "and parent='", Folder, "' and owner='", escape(BareJID), "';"],
-                [{file, query_file_by_parent(Folder)}, {folder, Query}];
-               true ->
-                   Q1 = [query_folder_column(normal), "and parent='", Folder, "' and type='", ?TYPE_3, "';"],
-                   Q2 = ["select id, type, name, creator, owner, created_at from folder, share_users where folder.status='1' and
-                   folder.type='", ?TYPE_4, "' and share_users.userjid='", escape(BareJID), "' and folder.id=share_users.folder;"],
-                   [{file, query_file_by_parent(Folder)}, {folder, Q1}, {folder, Q2}]
-            end;
-        ?TYPE_3 ->
-            [{file, query_file_by_parent(Folder)}];
-        ?TYPE_4 ->
-            if IsOwner =:= true -> [{file, query_file_by_parent(Folder)}];
-            true -> {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
-            end;
-        ?TYPE_5 ->
-            if IsOwner =:= true -> [{file, query_file_by_parent(Folder)}];
+        ?TYPE_PERSON ->
+            if
+                IsOwner =:= true ->
+                    Query = [query_folder_column(normal), "and parent='", Folder, "' and owner='", escape(BareJID), "';"],
+                    [{file, query_file_by_parent(Folder)}, {folder, Query}];
                 true ->
-                    case ejabberd_odbc:sql_query(LServer, ["select id from share_users where folder='", Folder, "' and userjid='", BareJID, "';"]) of
+                    Q1 = [query_folder_column(normal), "and parent='", Folder, "' and type='", ?TYPE_PER_PUBLIC, "';"],
+                    Q2 = ["select id, type, name, creator, owner, created_at from folder, share_users where folder.status='1' and
+                    folder.type='", ?TYPE_PER_SHARE, "' and share_users.userjid='", escape(BareJID), "' and folder.id=share_users.folder;"],
+                    [{file, query_file_by_parent(Folder)}, {folder, Q1}, {folder, Q2}]
+            end;
+        ?TYPE_PER_PUBLIC ->
+            [{file, query_file_by_parent(Folder)}];
+        ?TYPE_PER_SHARE ->
+            if
+                IsOwner =:= true -> [{file, query_file_by_parent(Folder)}];
+                true ->
+                    case ejabberd_odbc:sql_query(LServer, ["select id from share_users where folder='", Folder,
+                        "' and userjid='", escape(BareJID), "';"]) of
                         {selected, _, [{_ID}]} -> [{file, query_file_by_parent(Folder)}];
                         _ -> {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
                     end
+            end;
+        ?TYPE_PER_PRIVATE ->
+            if
+                IsOwner =:= true -> [{file, query_file_by_parent(Folder)}];
+                true -> {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
             end;
         _ ->
             []
@@ -1540,16 +1645,16 @@ get_dir(LServer, Type, ParentID, ParentType, ParentName) ->
     if
         Type =:= <<"file">> ->
             if
-                (ParentType =:= ?TYPE_0) ->
+                (ParentType =:= ?TYPE_PUBLIC) ->
                     {ok, ParentName};
-                (ParentType =:= ?TYPE_2) ->
+                (ParentType =:= ?TYPE_PERSON) ->
                     {ok, <<"@">>};
-                (ParentType =:= ?TYPE_1) or (ParentType =:= ?TYPE_3) or (ParentType =:= ?TYPE_4) or (ParentType =:= ?TYPE_5) ->
+                (ParentType =:= ?TYPE_PUB_SUB) or (ParentType =:= ?TYPE_PER_PUBLIC) or (ParentType =:= ?TYPE_PER_SHARE) or (ParentType =:= ?TYPE_PER_PRIVATE) ->
                     case ejabberd_odbc:sql_query(LServer, ["select f2.name from folder as f1, folder as f2 where f1.id='",
                         ParentID, "' and f1.parent=f2.id;"]) of
                         {selected, _, [{PPName}]} ->
                             if
-                                (ParentType =:= ?TYPE_1) -> {ok, <<PPName/binary, ">", ParentName/binary>>};
+                                (ParentType =:= ?TYPE_PUB_SUB) -> {ok, <<PPName/binary, ">", ParentName/binary>>};
                                 true -> {ok, <<"@>", ParentName/binary>>}
                             end;
                         _ -> not_exist
@@ -1557,9 +1662,9 @@ get_dir(LServer, Type, ParentID, ParentType, ParentName) ->
             end;
        Type =:= <<"folder">> ->
            if
-               (ParentType =:= ?TYPE_0) ->
+               (ParentType =:= ?TYPE_PUBLIC) ->
                    {ok, ParentName};
-               (ParentType =:= ?TYPE_2) ->
+               (ParentType =:= ?TYPE_PERSON) ->
                    {ok, <<"@">>}
            end
     end.
@@ -1589,7 +1694,7 @@ check_log_trash_parameter(Before, After, Count) ->
     if (Before /= false) and (After /= false) -> error;
         (Before =:= false) and (After =:= false) -> error;
         true ->
-            CountInteger = binary_to_integer(Count, true, 20, 20),
+            CountInteger = binary_to_integer(Count, true, 1, 20),
             if
                 (Before /= false)->
                     if
@@ -1614,6 +1719,14 @@ check_log_trash_parameter(Before, After, Count) ->
                             end
                     end
             end
+    end.
+
+check_add_file_uuid_valid(LServer, UUID) ->
+    case ejabberd_odbc:sql_query(LServer, ["select id from mms_file where id='", UUID, "'"]) of
+        {selected,_,[{_ID}]} ->
+            valid;
+        _ ->
+            invalid
     end.
 
 store_log(LServer, JID, Operation, Text, Path, Project) ->

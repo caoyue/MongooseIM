@@ -379,6 +379,8 @@
     jlib:aft_stanza_error(<<"16001">>,<<"modify">>,<<"undefined-condition">>)).
 -define(AFT_ERR_FILE_EXIST,
     jlib:aft_stanza_error(<<"16002">>,<<"modify">>,<<"undefined-condition">>)).
+-define(AFT_ERR_INVALID_FILE_ID,
+    jlib:aft_stanza_error(<<"16003">>,<<"modify">>,<<"undefined-condition">>)).
 %%--------------------------------------------------------------------
 
 
