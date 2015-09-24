@@ -9,7 +9,7 @@
 -include("jlib.hrl").
 -include("organization.hrl").
 
--define(NS_AFT_PROJECT, <<"aft:project">>).
+-define(TASK_PAGE_ITEM_COUNT, <<"10">>).
 
 
 start(Host, _Opts) ->
@@ -66,6 +66,12 @@ process_iq(From, To, #iq{xmlns = ?NS_AFT_PROJECT, sub_el = SubEl} = IQ) ->
             delete_member(From, To, IQ);
         <<"project_name_exist">> ->
             is_project_name_exist(From, To, IQ);
+        <<"change_admin">> ->
+            change_admin(From, To, IQ);
+        <<"get_task_member">> ->
+            get_task_member(From, To, IQ);
+        <<"get_task">> ->
+            get_task(From, To, IQ);
         _ ->
             IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}
     end;
@@ -76,6 +82,25 @@ process_iq(_, _, IQ) ->
 %% ------------------------------------------------------------------
 %% higher function. called by process_iq.
 %% ------------------------------------------------------------------
+
+change_task_owner(LServer, Project, JID, GroupID, NewOwner, NickName) ->
+    Query = ["select owner from groupinfo where groupid='", GroupID, "' and project='", Project, "';"],
+    case ejabberd_odbc:sql_query(LServer, Query) of
+        {selected, _, [{JID}]} ->
+            F = fun() ->
+                ejabberd_odbc:sql_query(LServer, "update groupinfo set owner='", ejabberd_odbc:escape(NewOwner), "' where groupid='", GroupID, "';"),
+                ejabberd_odbc:sql_query(LServer, "insert into groupuser(groupid, jid, nickname) values('", GroupID, "', '",
+                    ejabberd_odbc:escape(JID), "', '", ejabberd_odbc:escape(NickName), "');"),
+                ok
+            end,
+            case ejabberd_odbc:escape(LServer, F) of
+                {atomic, ok} -> ok;
+                _ -> error
+            end;
+        _ ->
+            error
+    end.
+
 
 get_project(From, _To, #iq{type = get, sub_el = SubEl} = IQ, Who) ->
     #jid{user = U, server = S} = From,
@@ -95,8 +120,7 @@ get_project(From, _To, #iq{type = get, sub_el = SubEl} = IQ, Who) ->
             IQ#iq{type = error, sub_el = [SubEl, Error]};
         {ok, Result} ->
             IQ#iq{type = result,
-                  sub_el = [SubEl#xmlel{attrs = [{<<"xmlns">>, ?NS_AFT_PROJECT}, {<<"type">>, <<"get_project">>}],
-                                        children = [{xmlcdata, Result}]}]}
+                  sub_el = [SubEl#xmlel{children = [{xmlcdata, Result}]}]}
     end;
 get_project(_, _, IQ, _) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
@@ -116,8 +140,7 @@ get_structure(From, _To, #iq{type = get, sub_el = SubEl} = IQ) ->
             IQ#iq{type = error, sub_el = [SubEl, Error]};
         {ok, Result} ->
             IQ#iq{type = result,
-                  sub_el = [SubEl#xmlel{attrs = [{<<"xmlns">>, ?NS_AFT_PROJECT}, {<<"type">>, <<"get_structure">>}],
-                                        children = [{xmlcdata, Result}]}]}
+                  sub_el = [SubEl#xmlel{children = [{xmlcdata, Result}]}]}
     end;
 get_structure(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
@@ -135,8 +158,7 @@ create(From, _To, #iq{type = set, sub_el = SubEl} = IQ) ->
             IQ#iq{type = error, sub_el = [SubEl, Error]};
         {ok, Result} ->
             IQ#iq{type = result,
-                  sub_el = [SubEl#xmlel{attrs = [{<<"xmlns">>, ?NS_AFT_PROJECT}, {<<"type">>, <<"create">>}],
-                                        children = [{xmlcdata, Result}]}]}
+                  sub_el = [SubEl#xmlel{children = [{xmlcdata, Result}]}]}
     end;
 create(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
@@ -195,8 +217,7 @@ get_photo(From, _To, #iq{type = get, sub_el = SubEl} = IQ) ->
             IQ#iq{type = error, sub_el = [SubEl, Error]};
         {ok, Result} ->
             IQ#iq{type = result,
-                  sub_el = [SubEl#xmlel{attrs = [{<<"xmlns">>, ?NS_AFT_PROJECT}, {<<"type">>, <<"get_photo">>}],
-                                        children = [{xmlcdata, Result}]}]}
+                  sub_el = [SubEl#xmlel{children = [{xmlcdata, Result}]}]}
     end;
 get_photo(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
@@ -209,10 +230,8 @@ list_project(From, _To, #iq{type = get, sub_el = SubEl} = IQ, Type) ->
         {error, Error} ->
             IQ#iq{type = error, sub_el = [SubEl, Error]};
         {ok, Result} ->
-            SubType = atom_to_binary(Type, latin1),
             IQ#iq{type = result,
-                  sub_el = [SubEl#xmlel{attrs = [{<<"xmlns">>, ?NS_AFT_PROJECT}, {<<"type">>, SubType}],
-                                        children = [{xmlcdata, Result}]}]}
+                  sub_el = [SubEl#xmlel{children = [{xmlcdata, Result}]}]}
     end;
 list_project(_, _, IQ, _Type) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
@@ -227,8 +246,7 @@ list_children_jobs(From, _To, #iq{type = get, sub_el = SubEl} = IQ) ->
             IQ#iq{type = error, sub_el = [SubEl, Error]};
         {ok, Result} ->
             IQ#iq{type = result,
-                  sub_el = [SubEl#xmlel{attrs = [{<<"xmlns">>, ?NS_AFT_PROJECT}, {<<"type">>, <<"list_children_jobs">>}],
-                                        children = [{xmlcdata, Result}]}]}
+                  sub_el = [SubEl#xmlel{children = [{xmlcdata, Result}]}]}
     end;
 list_children_jobs(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
@@ -250,8 +268,7 @@ add_job(From, _To, #iq{type = set, sub_el = SubEl} = IQ) ->
             Content = <<"{\"job_tag\":\"", JobTag/binary, "\"}">>,
             push_message(ProID, S, AllMembers, <<"add_job">>, Content),
             IQ#iq{type = result,
-                  sub_el = [SubEl#xmlel{attrs = [{<<"xmlns">>, ?NS_AFT_PROJECT}, {<<"type">>, <<"add_job">>}],
-                                        children = [{xmlcdata, Result}]}]}
+                  sub_el = [SubEl#xmlel{children = [{xmlcdata, Result}]}]}
     end;
 add_job(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
@@ -306,7 +323,6 @@ delete_member(From, _To, #iq{type = set, sub_el = SubEl} = IQ) ->
                 _ ->
                     IQ#iq{type = error, sub_el = [SubEl, ?AFT_ERR_DATABASE]}
             end
-            %% TOFIX: finish task by this user, delete it in task? , push notice into task and event, any more???
     end;
 delete_member(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
@@ -327,8 +343,7 @@ list_member(From, _To, #iq{type = get, sub_el = SubEl} = IQ) ->
             IQ#iq{type = error, sub_el = [SubEl, Error]};
         {ok, Result} ->
             IQ#iq{type = result,
-                  sub_el = [SubEl#xmlel{attrs = [{<<"xmlns">>, ?NS_AFT_PROJECT}, {<<"type">>, <<"list_member">>}],
-                                        children = [{xmlcdata, Result}]}]}
+                  sub_el = [SubEl#xmlel{children = [{xmlcdata, Result}]}]}
     end;
 list_member(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
@@ -344,8 +359,7 @@ list_link_project(From, _To, #iq{type = get, sub_el = SubEl} = IQ) ->
             IQ#iq{type = error, sub_el = [SubEl, Error]};
         {ok, Result} ->
             IQ#iq{type = result,
-                  sub_el = [SubEl#xmlel{attrs = [{<<"xmlns">>, ?NS_AFT_PROJECT}, {<<"type">>, <<"list_link_project">>}],
-                                        children = [{xmlcdata, Result}]}]}
+                  sub_el = [SubEl#xmlel{children = [{xmlcdata, Result}]}]}
     end;
 list_link_project(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
@@ -398,8 +412,7 @@ search_project(From, _To, #iq{sub_el = SubEl} = IQ) ->
             IQ#iq{type = error, sub_el = [SubEl, Error]};
         {ok, Result} ->
             IQ#iq{type = result,
-                  sub_el = [SubEl#xmlel{attrs = [{<<"xmlns">>, ?NS_AFT_PROJECT}, {<<"type">>, <<"search_project">>}],
-                                        children = [{xmlcdata, Result}]}]}
+                  sub_el = [SubEl#xmlel{children = [{xmlcdata, Result}]}]}
     end;
 search_project(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
@@ -410,15 +423,69 @@ is_project_name_exist(From, _To, #iq{sub_el = SubEl} = IQ) ->
     {struct, Data} = mochijson2:decode(xml:get_tag_cdata(SubEl)),
     {_, Name} = lists:keyfind(<<"name">>, 1, Data),
     case odbc_organization:is_project_name_exist(S, Name) of
-        {ok, true} ->
-            IQ#iq{type = error, sub_el = [SubEl, ?AFT_ERR_PROJECT_NAME_EXIST]};
-        {ok, false} ->
+        false ->
             IQ#iq{type = result, sub_el = [SubEl]};
-        {error, _Reson} ->
-            IQ#iq{type = error, sub_el = [?AFT_ERR_DATABASE]}
+        _ ->
+            IQ#iq{type = error, sub_el = [SubEl, ?AFT_ERR_PROJECT_NAME_EXIST]}
     end;
 is_project_name_exist(_, _, IQ) ->
     IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
+
+change_admin(From, _To, #iq{type = set, sub_el = SubEl} = IQ) ->
+    #jid{user = U, server = S} = From,
+    BaseJID = <<U/binary, "@", S/binary>>,
+    {struct, Data} = mochijson2:decode(xml:get_tag_cdata(SubEl)),
+    {_, Project} = lists:keyfind(<<"project">>, 1, Data),
+    {_, Admin} = lists:keyfind(<<"admin">>, 1, Data),
+
+    case change_admin_ex(S, Project, Admin, BaseJID) of
+        {error, Error} ->
+            IQ#iq{type = error, sub_el = [SubEl, Error]};
+        ok ->
+            IQ#iq{type = result}
+    end;
+change_admin(_, _, IQ) ->
+    IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
+
+get_task_member(From, _To, #iq{type = get, sub_el = SubEl} = IQ) ->
+    #jid{user = U, server = S} = From,
+    BareJID = <<U/binary, "@", S/binary>>,
+    {struct, Data} = mochijson2:decode(xml:get_tag_cdata(SubEl)),
+    {_, Project} = lists:keyfind(<<"project">>, 1, Data),
+    {_, JobID} = lists:keyfind(<<"job_id">>, 1, Data),
+
+    case get_task_member_ex(S, Project, BareJID, JobID) of
+        {error, Error} ->
+            IQ#iq{type = error, sub_el = [SubEl, Error]};
+        {ok, Result} ->
+            IQ#iq{type = result,
+                sub_el = [SubEl#xmlel{children = [{xmlcdata, Result}]}]}
+    end;
+get_task_member(_, _, IQ) ->
+    IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
+
+
+get_task(From, _To, #iq{type = get, sub_el = SubEl} = IQ) ->
+    #jid{user = U, server = S} = From,
+    BareJID = <<U/binary, "@", S/binary>>,
+    {struct, Data} = mochijson2:decode(xml:get_tag_cdata(SubEl)),
+    {_, Project} = lists:keyfind(<<"project">>, 1, Data),
+    {_, SelfJobID} = lists:keyfind(<<"self_job_id">>, 1, Data),
+    {_, TargetJobID} = lists:keyfind(<<"job_id">>, 1, Data),
+    {_, JID} = lists:keyfind(<<"jid">>, 1, Data),
+    {_, Page} = lists:keyfind(<<"page">>, 1, Data),
+
+    case get_task_ex(S, Project, BareJID, SelfJobID, JID, TargetJobID, Page) of
+        {error, Error} ->
+            IQ#iq{type = error, sub_el = [SubEl, Error]};
+        {ok, Result} ->
+            IQ#iq{type = result,
+                sub_el = [SubEl#xmlel{children = [{xmlcdata, Result}]}]}
+    end;
+get_task(_, _, IQ) ->
+    IQ#iq{type = error, sub_el = [?ERR_BAD_REQUEST]}.
+
+
 
 
 %% ------------------------------------------------------------------
@@ -430,13 +497,13 @@ get_project_ex(LServer, BaseJID, ProID, ProjectTarget) ->
         case ProjectTarget of
             false ->
                 case odbc_organization:is_memeber(LServer, ProID, BaseJID) of
-                    {ok, true} -> {true, self};
-                    {ok, false} -> {is_predefine_template(LServer, ProID), self}
+                    true -> {true, self};
+                    _ -> {is_predefine_template(LServer, ProID), self}
                 end;
             _ ->
                 case odbc_organization:is_link_member(LServer, ProID, BaseJID, ProjectTarget) of
-                    {ok, true} -> {true, link};
-                    {ok, false} ->false
+                    true -> {true, link};
+                    _ ->false
                 end
         end,
     case Valid of
@@ -488,17 +555,17 @@ list_project_ex(LServer, BaseJID, Type) ->
 %% remove check authority???  %% (LServer, ProjectSelf, Jid, ProjectTarget)
 get_structure_ex(LServer, BaseJID, ProID, ProjectTarget) ->
     Valid = case odbc_organization:is_memeber(LServer, ProID, BaseJID) of
-                {ok, true} ->
+                true ->
                     case ProjectTarget of
                         false ->
                             {true, ProID};
                         _ ->
                             case odbc_organization:is_link_member(LServer, ProID, BaseJID, ProjectTarget) of
-                                {ok, true} -> {true, ProjectTarget};
-                                {ok, false} ->{true, ProID}
+                                true -> {true, ProjectTarget};
+                                _ ->{true, ProID}
                             end
                     end;
-                {ok, false} -> {is_predefine_template(LServer, ProID), ProID}
+                _ -> {is_predefine_template(LServer, ProID), ProID}
             end,
     case Valid of
         {true, Project} ->
@@ -514,7 +581,7 @@ get_structure_ex(LServer, BaseJID, ProID, ProjectTarget) ->
 
 create_ex(LServer, ProjectName, BaseJID, Template, Job) ->
     case odbc_organization:is_project_name_exist(LServer, ProjectName) of
-        {ok, false} ->
+        false ->
             case odbc_organization:node_exist(LServer, Template, Job) of
                 {ok, true} ->
                     case odbc_organization:add_project(LServer, #project{name = ProjectName, description = <<"">>, admin = BaseJID}, Template, Job) of
@@ -537,10 +604,8 @@ create_ex(LServer, ProjectName, BaseJID, Template, Job) ->
                 {ok, false} ->
                     {error, ?AFT_ERR_INVALID_JOB}
             end;
-        {ok, true} ->
-            {error, ?AFT_ERR_PROJECT_NAME_EXIST};
-        {error, _} ->
-            {error, ?AFT_ERR_DATABASE}
+        _ ->
+            {error, ?AFT_ERR_PROJECT_NAME_EXIST}
     end.
 
 finish_ex(LServer, ProID, BaseJID) ->
@@ -561,22 +626,22 @@ finish_ex(LServer, ProID, BaseJID) ->
             {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
     end.
 
-subscribe_status({ok, true},  {ok, false}, subscribe) -> subscribe_again;
-subscribe_status({ok, false}, {ok, true},  subscribe) -> subscribed;
-subscribe_status({ok, false}, {ok, false}, subscribe) -> subscribe;
-subscribe_status(_,           {ok, false}, subscribed) -> {error, ?AFT_ERR_TARGET_NO_SUBSCRIBE_REQUEST};
-subscribe_status({ok, false}, {ok, true},  subscribed) -> subscribed;
-subscribe_status(_,           {ok, false}, unsubscribed) -> {error, ?AFT_ERR_TARGET_NO_SUBSCRIBE_REQUEST};
-subscribe_status({ok, false}, {ok, true},  unsubscribed) -> unsubscribed;
-subscribe_status({ok, true},  {ok, true},  unsubscribe) -> unsubscribe;
-subscribe_status(_,           _,           unsubscribe) -> {error, ?AFT_ERR_NO_SUBSCRIBED};
-subscribe_status({ok, true},  {ok, true},  _) -> {error, ?AFT_ERR_ALLREADY_SUBSCRIBED}.
+subscribe_status(true,  false, subscribe)    -> subscribe_again;
+subscribe_status(false, true,  subscribe)    -> subscribed;
+subscribe_status(false, false, subscribe)    -> subscribe;
+subscribe_status(_,     false, subscribed)   -> {error, ?AFT_ERR_TARGET_NO_SUBSCRIBE_REQUEST};
+subscribe_status(false, true,  subscribed)   -> subscribed;
+subscribe_status(_,     false, unsubscribed) -> {error, ?AFT_ERR_TARGET_NO_SUBSCRIBE_REQUEST};
+subscribe_status(false, true,  unsubscribed) -> unsubscribed;
+subscribe_status(true,  true,  unsubscribe)  -> unsubscribe;
+subscribe_status(_,     _,     unsubscribe)  -> {error, ?AFT_ERR_NO_SUBSCRIBED};
+subscribe_status(true,  true,  _)            -> {error, ?AFT_ERR_ALLREADY_SUBSCRIBED}.
 
 subscribe_ex(LServer, JID, ProSource, ProTarget, Type) ->
     case is_admin(LServer, JID, ProSource) of
         true ->
             case odbc_organization:is_project_exist(LServer, ProTarget) of
-                {ok, true} ->
+                true ->
                     To = odbc_organization:is_subscribe_exist(LServer, ProSource, ProTarget),
                     From = odbc_organization:is_subscribe_exist(LServer, ProTarget, ProSource),
                     case subscribe_status(To, From, Type) of
@@ -598,13 +663,11 @@ subscribe_ex(LServer, JID, ProSource, ProTarget, Type) ->
                         unsubscribe ->
                             odbc_organization:unsubscribe(LServer, ProSource, ProTarget)
                     end;
-                {ok, false} ->
+                _ ->
                     {error, ?AFT_ERR_PROJECT_NOT_EXIST}
             end;
         false ->
-            {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH};
-        failed ->
-            {error, ?AFT_ERR_DATABASE}
+            {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
     end.
 
 search_project_ex(LServer, Name) ->
@@ -638,9 +701,7 @@ list_children_jobs_ex(LServer, JID, ProID) ->
                             || {R1, R2, R3} <- Result],
                     F = mochijson2:encoder([{utf8, true}]),
                     {ok, iolist_to_binary(F({struct, [{<<"project">>, ProID}, {<<"job">>, Json}]}))}
-            end;
-        failed ->
-            {ok, ?AFT_ERR_DATABASE}
+            end
     end.
 
 check_add_member_valid(LServer, ProID, _BaseJID, List) ->
@@ -683,7 +744,7 @@ add_member_ex(LServer, ProID, BaseJID, List) ->
     case odbc_organization:project_status(LServer, ProID) of
         {ok, [{<<"1">>}]} ->
             case odbc_organization:is_memeber(LServer, ProID, BaseJID) of
-                {ok, true} ->
+                true ->
                     case check_add_member_valid(LServer, ProID, BaseJID, List) of
                         {error, Error} ->
                             {error, Error};
@@ -699,10 +760,8 @@ add_member_ex(LServer, ProID, BaseJID, List) ->
                                     {error, ?AFT_ERR_MEMBER_INVALID}
                             end
                     end;
-                {ok, false} ->
-                    {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH};
-                {error, _Reason} ->
-                    {error, ?AFT_ERR_DATABASE}
+                _ ->
+                    {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
             end;
         {ok, [{<<"0">>}]} ->
             {error, ?AFT_ERR_ALLREADY_FINISHED};
@@ -768,22 +827,20 @@ add_job_ex(LServer, ProID, BaseJID, ParentJobID, JobName, Part) ->
 
 list_link_project_ex(LServer, ProID, BaseJID) ->
     case odbc_organization:is_memeber(LServer, ProID, BaseJID) of
-        {ok, true} ->
+        true ->
             {ok, Result} = odbc_organization:get_link_project(LServer, ProID),
             %%{ok, build_json([ {"self_project", ProID}, {"link_project", {["id", "name"], Result, true}} ], <<>>)};
             Json = [{struct, [{<<"id">>, R1}, {<<"name">>, R2}, {<<"photo">>, list_to_binary(make_head_url(binary_to_list(R3)))},
                 {<<"job_tag">>, R4}, {<<"member_tag">>, R5}]} || {R1, R2, R3, R4, R5} <- Result],
             F = mochijson2:encoder([{utf8, true}]),
             {ok, iolist_to_binary(F({struct, [{<<"self_project">>, ProID}, {<<"link_project">>, Json}]}))};
-        {ok, false} ->
-            {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH};
-        {error, _Reason} ->
-            {error, ?AFT_ERR_DATABASE}
+        _ ->
+            {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
     end.
 
 list_member_ex(LServer, ProID, BaseJID, ProjectTarget) ->
     case odbc_organization:is_memeber(LServer, ProID, BaseJID) of
-        {ok, true} ->
+        true ->
             case ProjectTarget of
                 false ->
                     {ok, Result} = odbc_organization:get_all(LServer, ProID),
@@ -794,21 +851,19 @@ list_member_ex(LServer, ProID, BaseJID, ProjectTarget) ->
                     {ok, iolist_to_binary(F({struct, [{<<"project">>, ProID}, {<<"member">>, Json}]}))};
                 _ ->
                     case odbc_organization:is_link_member(LServer, ProID, BaseJID, ProjectTarget) of
-                        {ok, true} ->
+                        true ->
                             {ok, Result} = odbc_organization:get_all(LServer, ProjectTarget),
                             %%{ok, build_json([ {"project", ProjectTarget}, {"member", {["jid", "job_id", "job_name", "part"], Result, true}} ], <<>>)};
                             Json = [{struct, [{<<"jid">>, R1}, {<<"job_id">>, R2}]}
                                     || {R1, R2, _R3, _R4} <- Result],
                             F = mochijson2:encoder([{utf8, true}]),
                             {ok, iolist_to_binary(F({struct, [{<<"project">>, ProjectTarget}, {<<"member">>, Json}]}))};
-                        {ok, false} ->
+                        _ ->
                             {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
                     end
             end;
-        {ok, false} ->
-            {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH};
-        {error, _Reason} ->
-            {error, ?AFT_ERR_DATABASE}
+        _ ->
+            {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
     end.
 
 delete_member_ex(LServer, ProID, BaseJID, JID) ->
@@ -818,36 +873,47 @@ delete_member_ex(LServer, ProID, BaseJID, JID) ->
                 true ->
                     {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH};
                 _ ->
-                    case is_admin(LServer, BaseJID, ProID) of
-                        true ->
-                            case odbc_organization:delete_employee(LServer, ProID, JID) of
-                                {ok, MemberTag} ->
-                                    {ok, MemberTag};
-                                {error, not_exist} ->
-                                    {error, ?AFT_ERR_MEMBER_NOT_EXIST};
-                                {error, _Reason} ->
+                    PriviligeOK = case is_admin(LServer, BaseJID, ProID) of
+                                      true -> ok;
+                                      false ->
+                                          %%TOFIX: odbc_organization:is_child(....)
+                                          case odbc_organization:get_parent_jids(LServer, JID, ProID) of
+                                              {error, _} ->
+                                                  {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH};
+                                              {ok, List} ->
+                                                  Parent_jid_list = [P_JID || #employee{jid = P_JID} <- List],
+                                                  case lists:member(BaseJID, Parent_jid_list) of
+                                                      true ->
+                                                          case is_admin(LServer, JID, ProID) of
+                                                              true ->
+                                                                  {error, ?AFT_ERR_DELETE_ADMIN};
+                                                              false ->
+                                                                  ok
+                                                          end;
+                                                      false ->
+                                                          {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
+                                                  end
+                                          end
+
+                                  end,
+
+                    case PriviligeOK of
+                        ok ->
+                            case odbc_organization:delete_task(LServer, ProID, JID) of
+                                ok ->
+                                    case odbc_organization:delete_employee(LServer, ProID, JID) of
+                                        {ok, MemberTag} ->
+                                            {ok, MemberTag};
+                                        {error, _Reason} ->
+                                            {error, ?AFT_ERR_DATABASE}
+                                    end;
+                                {continue, _PairTask} -> %% should return this pair task to client.
+                                    {error, ?AFT_ERR_JOIN_PAIR_TASK};
+                                _ ->
                                     {error, ?AFT_ERR_DATABASE}
                             end;
-                        false ->
-                            case odbc_organization:get_parent_jids(LServer, JID, ProID) of
-                                {error, not_exists} ->
-                                    {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH};
-                                {ok, []} ->
-                                    {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH};
-                                {ok, List} ->
-                                    Parent_jid_list = [P_JID || #employee{jid = P_JID} <- List],
-                                    case lists:member(BaseJID, Parent_jid_list) of
-                                        true ->
-                                            case odbc_organization:delete_employee(LServer, ProID, JID) of
-                                                {ok, MemberTag} ->
-                                                    {ok, MemberTag};
-                                                {error, _Reason} ->
-                                                    {error, ?AFT_ERR_DATABASE}
-                                            end;
-                                        false ->
-                                            {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
-                                    end
-                            end
+                        Error ->
+                            Error
                     end
             end;
         {ok, [{<<"0">>}]} ->
@@ -873,6 +939,83 @@ get_photo_ex(LServer, ProID) ->
             {ok, <<"{\"project\":\"", ProID/binary, "\", \"photo\":\"\"}">>};
         {ok, [{Photo}]} ->
             {ok, <<"{\"project\":\"", ProID/binary, "\", \"photo\":\"", Photo/binary ,"\"}">>}
+    end.
+
+change_admin_ex(LServer, Project, Admin, BaseJID) ->
+    case odbc_organization:is_memeber(LServer, Project, Admin) of
+        true ->
+            {true, OldAdmin} = get_admin(LServer, Project),
+            if
+                (Admin =:= OldAdmin) or (BaseJID =:= Admin) -> {error, ?AFT_ERR_MEMBER_INVALID};
+                true ->
+                    if
+                        BaseJID =:= OldAdmin ->
+                            case odbc_organization:change_admin(LServer, Project, Admin) of
+                                ok -> ok;
+                                _ -> {error, ?AFT_ERR_DATABASE}
+                            end;
+                        true ->
+                            {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
+%%                             case odbc_organization:get_job(LServer, BaseJID, Project) of
+%%                                 {ok, Job} ->
+%%                                     {ok, OldAdminJob} = odbc_organization:get_job(LServer, OldAdmin, Project),
+%%                                     if
+%%                                         Job =:= OldAdminJob ->
+%%                                             case odbc_organization:change_admin(LServer, Project, Admin) of
+%%                                                 ok -> ok;
+%%                                                 _ -> {error, ?AFT_ERR_DATABASE}
+%%                                             end;
+%%                                         true ->
+%%                                             case odbc_organization:get_parent_jids(LServer, BaseJID, Project) of
+%%                                                 {error, _} ->
+%%                                                     {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH};
+%%                                                 {ok, Parents} ->
+%%                                                     ParentJIDs = [P_JID || #employee{jid = P_JID} <- Parents],
+%%                                                     case lists:member(BaseJID, ParentJIDs) of
+%%                                                         true ->
+%%                                                             case odbc_organization:change_admin(LServer, Project, Admin) of
+%%                                                                 ok -> ok;
+%%                                                                 _ -> {error, ?AFT_ERR_DATABASE}
+%%                                                             end;
+%%                                                         false ->
+%%                                                             {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
+%%                                                     end
+%%                                             end
+%%                                     end;
+%%                                 _ ->
+%%                                     {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
+%%                             end
+                    end
+            end
+    end.
+
+get_task_member_ex(LServer, Project, BareJID, JobID) ->
+    case odbc_organization:is_member2(LServer, JobID, BareJID) of
+        true ->
+            Result = odbc_organization:get_task_jid(LServer, Project, JobID),
+            JIDs = [R1 || {R1} <- Result],
+            F = mochijson2:encoder([{utf8, true}]),
+            {ok, iolist_to_binary(F({struct, [{<<"project">>, Project}, {<<"member">>, JIDs}]}))};
+        _ ->
+            {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
+    end.
+
+get_task_ex(LServer, Project, BareJID, SelfJobID, JID, TargetJobID, Page) ->
+    case odbc_organization:is_member2(LServer, SelfJobID, BareJID) of
+        true ->
+            StartLine = integer_to_binary((binary_to_integer(Page) - 1) * binary_to_integer(?TASK_PAGE_ITEM_COUNT)),
+            F = mochijson2:encoder([{utf8, true}]),
+            Tasks = case odbc_organization:get_task(LServer, Project, JID, StartLine, ?TASK_PAGE_ITEM_COUNT) of
+                        {ok, Result} ->
+                            [{struct, [{<<"title">>, R1}, {<<"created_at">>, R2}, {<<"owner">>, R3}, {<<"joined_at">>, R4}]}
+                                || {R1, R2, R3, R4} <- Result];
+                        _ ->
+                            []
+                    end,
+            {ok, iolist_to_binary(F({struct, [{<<"project">>, Project}, {<<"job_id">>, TargetJobID},
+                {<<"jid">>, JID}, {<<"task">>, Tasks}]}) )};
+        false ->
+            {error, ?AFT_ERR_PRIVILEGE_NOT_ENOUGH}
     end.
 
 
@@ -905,14 +1048,12 @@ get_admin(LServer, ProID)->
 
 is_admin(LServer, BaseJID, ProID) ->
     case odbc_organization:get_admin(LServer, ProID) of
-        {ok, []} ->
-            false;
         {ok, [{Admin}]} ->
             if Admin =:= BaseJID -> true;
                true -> false
             end;
-        {error, _Reason} ->
-            failed
+        _ ->
+            false
     end.
 
 push_message(ProID, Server, ToList, Type, Contents) ->

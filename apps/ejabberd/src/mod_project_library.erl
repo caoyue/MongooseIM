@@ -1068,10 +1068,10 @@ clear_trash_ex(LServer, BareJID, Project) ->
     case odbc_organization:is_memeber(LServer, Project, BareJID) of
         {ok, true} ->
             DeleteVersionFile= ["delete file_version.* from file_version, file, folder",
-                "where file.status='0' and file.folder=folder.id and file_version.file=file.id and ( folder.owner='", escape(BareJID), "' "],
+                "where folder.project='", Project, "' and file.status='0' and file.folder=folder.id and file_version.file=file.id and ( folder.owner='", escape(BareJID), "' "],
             DeleteFile = ["delete file.* from file, folder ",
-                "where file.status='0' and file.folder=folder.id and ( folder.owner='", escape(BareJID), "' "],
-            DeleteFolder = ["delete from folder where folder.status='0' and ( folder.owner='", ejabberd_odbc:escape(BareJID), "' "],
+                "where folder=project='", Project, "' file.status='0' and file.folder=folder.id and ( folder.owner='", escape(BareJID), "' "],
+            DeleteFolder = ["delete from folder where folder='", Project, "' folder.status='0' and ( folder.owner='", ejabberd_odbc:escape(BareJID), "' "],
             AdminOrNot = case ejabberd_odbc:sql_query(LServer, ["select admin from project where id='", Project, "';"]) of
                              {selected, _, [{BareJID}]} -> " or folder.owner='admin');";
                              _ -> " );"

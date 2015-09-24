@@ -332,6 +332,8 @@ CREATE TABLE groupinfo (
     end_at timestamp
 ) CHARACTER SET utf8;
 
+CREATE INDEX groupinfo_project_index ON groupinfo (project);
+
 CREATE TABLE groupuser (
     id int PRIMARY KEY NOT NULL auto_increment,
     groupid int NOT NULL,
@@ -391,8 +393,11 @@ CREATE TABLE organization_user (
     project int NOT NULL
 ) CHARACTER SET utf8;
 CREATE INDEX organization_user_index ON organization_user (organization, jid);
+CREATE INDEX organization_user_project_index ON organization_user(project);
 
-CREATE TABLE project (
+-- template id < 100, project id >= 100.
+-- insert a new template should specify id( 0 ~ 99 ), also set status='-1' will more clearly.
+CREATE TABLE project(
     id int PRIMARY KEY NOT NULL auto_increment,
     name varchar(250) CHARACTER SET binary NOT NULL,
     photo varchar(250) CHARACTER SET binary NOT NULL,
@@ -406,11 +411,16 @@ CREATE TABLE project (
     link_tag varchar(30) NOT NULL
 ) CHARACTER SET utf8;
 
+CREATE INDEX project_status_index ON project(status);
+
 CREATE TABLE project_link (
     id1 int NOT NULL,
     id2 int NOT NULL,
     PRIMARY KEY (id1, id2)
 ) CHARACTER SET utf8;
+
+CREATE INDEX project_link_id2_index ON project_link(id2);
+
 
 -- organization end
 
@@ -457,7 +467,6 @@ CREATE TABLE file(
 ) CHARACTER SET utf8;
 
 CREATE INDEX i_file_folder ON file(folder);
-CREATE INDEX i_file_status ON file(status);
 
 CREATE TABLE folder(
     id int PRIMARY KEY auto_increment,
@@ -473,10 +482,8 @@ CREATE TABLE folder(
     deleted_at BIGINT UNSIGNED NOT NULL default 0
 ) CHARACTER SET utf8;
 
-CREATE INDEX i_folder_type ON folder(type);
 CREATE INDEX i_folder_parent ON folder(parent);
 CREATE INDEX i_folder_project ON folder(project);
-CREATE INDEX i_folder_status ON folder(status);
 
 CREATE TABLE share_users(
     folder int NOT NULL,

@@ -109,6 +109,7 @@
 
 -define(NS_SEARCH_PHONE, <<"aft:search-phone">>).
 -define(NS_AFT_ERROR,    <<"aft:error">>).
+-define(NS_AFT_PROJECT, <<"aft:project">>).
 -define(NS_AFT_LIBRARY,  <<"aft:library">>).
 
 -define(ERR_BAD_REQUEST,
@@ -371,6 +372,10 @@
     jlib:aft_stanza_error(<<"13010">>,<<"cancel">>,<<"undefined-condition">>)).
 -define(AFT_ERR_MEMBER_INVALID,
     jlib:aft_stanza_error(<<"13011">>,<<"modify">>,<<"undefined-condition">>)).
+-define(AFT_ERR_JOIN_PAIR_TASK,
+    jlib:aft_stanza_error(<<"13012">>,<<"modify">>,<<"undefined-condition">>)).
+-define(AFT_ERR_DELETE_ADMIN,
+    jlib:aft_stanza_error(<<"13013">>,<<"modify">>,<<"undefined-condition">>)).
 
 %% project error: 16000 ~ 16999
 -define(AFT_ERR_FILE_NOT_EXIST,
