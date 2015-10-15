@@ -1,4 +1,4 @@
-MongooseIM  [![Build Status](https://travis-ci.org/ZekeLu/MongooseIM.svg?branch=master)](https://travis-ci.org/ZekeLu/MongooseIM)
+MongooseIM  [![Build Status](https://travis-ci.org/caoyue/MongooseIM.svg)](https://travis-ci.org/caoyue/MongooseIM)
 ============
 MongooseIM is Erlang Solutions' robust and efficient XMPP
 server aimed at large installations. Specifically designed for enterprise purposes,
